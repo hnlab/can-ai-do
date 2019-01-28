@@ -6,6 +6,36 @@
     "cxcr4",
     "drd3"
   ],
+  "nuclear": [
+    "andr",
+    "esr1",
+    "esr2",
+    "gcr",
+    "mcr",
+    "ppara",
+    "ppard",
+    "pparg",
+    "prgr",
+    "rxra",
+    "thb"
+  ],
+  "protease": [
+    "ace",
+    "ada17",
+    "bace1",
+    "casp3",
+    "dpp4",
+    "fa10",
+    "fa7",
+    "hivpr",
+    "lkha4",
+    "mmp13",
+    "reni",
+    "thrb",
+    "try1",
+    "tryb1",
+    "urok"
+  ],
   "kinase": [
     "abl1",
     "akt1",
@@ -33,19 +63,6 @@
     "tgfr1",
     "vgfr2",
     "wee1"
-  ],
-  "nuclear": [
-    "andr",
-    "esr1",
-    "esr2",
-    "gcr",
-    "mcr",
-    "ppara",
-    "ppard",
-    "pparg",
-    "prgr",
-    "rxra",
-    "thb"
   ],
   "other": [
     "aces",
@@ -93,22 +110,5 @@
     "sahh",
     "tysy",
     "xiap"
-  ],
-  "protease": [
-    "ace",
-    "ada17",
-    "bace1",
-    "casp3",
-    "dpp4",
-    "fa10",
-    "fa7",
-    "hivpr",
-    "lkha4",
-    "mmp13",
-    "reni",
-    "thrb",
-    "try1",
-    "tryb1",
-    "urok"
   ]
 }

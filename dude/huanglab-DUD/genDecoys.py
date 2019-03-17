@@ -13,10 +13,9 @@ from rdkit import DataStructs
 from rdkit.Chem import AllChem
 from rdkit.Chem import Descriptors as D
 from rdkit.Chem import rdMolDescriptors as CD
-from collections import namedtuple
 
 example_text = """Example:
-    genDecoys.py -a target/actives.smi
+    genDecoys.py -a target/actives.smi -z zinc_path
     
 """
 parser = argparse.ArgumentParser(
@@ -33,9 +32,9 @@ parser.add_argument(
     "actives in smiles format, one target one file, will use Path().parts[-2] as target name"
 )
 parser.add_argument(
-    "-n", default=50, type=int, help="number of decoys per active")
+    "-z", "--zinc_path", required=True, help="ZINC path, a dir for ZINC15, or file for ZINC12.")
 parser.add_argument(
-    "-z", default=15, type=int, help="zinc version: 12 or 15, default is 15")
+    "-n", "--num_decoys", default=50, type=int, help="number of decoys per active")
 parser.add_argument(
     "-mw",
     default=125,
@@ -67,6 +66,13 @@ parser.add_argument(
     type=int,
     help="net charge, default: 2, meaning +/- 2")
 parser.add_argument(
+    "-tc",
+    default=0.35,
+    type=float,
+    help=
+    "find dissimilar decoys base on Tanimoto Coefficient, default: 0.35"
+)
+parser.add_argument(
     "-tc_same",
     default=0.6,
     type=float,
@@ -87,7 +93,7 @@ args = parser.parse_args()
 MAX_PROP_DIFF = np.array([
     args.mw, args.logp, args.rotb, args.hbd, args.hba, args.q])
 
-def get_props(mol):
+def get_prop_array(mol):
     mw = CD.CalcExactMolWt(mol)
     logp = Chem.Crippen.MolLogP(mol)
     rotb = D.NumRotatableBonds(mol)
@@ -97,43 +103,54 @@ def get_props(mol):
     return np.array([mw, logp, rotb, hbd, hba, q])
 
 
-def next_smiles_file(mw, logp):
-    # map mw and logp to tranche name
-    name = 'ABCDEFGHIJK':
-    mw_slice = [200, 250, 300, 325, 350, 375, 400, 425, 450, 500]
-    logp_slice = [-1, 0, 1, 2, 2.5, 3, 3.5, 4, 4.5, 5]
-    tranche_init = ''
-    for i, mwi in enumerate(mw_slice):
-        if mw <= mwi:
-            name_mw = name[max(0,i-1):i+2]
-            break
+def zinc_supplier(mw, logp, zinc_path):
+    zinc_path = Path(zinc_path)
+    assert zinc_path.exists()
+    if zinc_path.is_file():
+        for m in Chem.SmilesMolSupplier(str(zinc_path), titleLine=False):
+            if m is not None:
+                yield m
     else:
-        tranche_mw = name[max(0,i-1):i+2]
-    tranche_init += name[i]
-    for i, logpi in enumerate(logp_slice):
-        if logp <= logpi:
+        # map mw and logp to tranche name
+        name = 'ABCDEFGHIJK'
+        mw_slice = [200, 250, 300, 325, 350, 375, 400, 425, 450, 500]
+        logp_slice = [-1, 0, 1, 2, 2.5, 3, 3.5, 4, 4.5, 5]
+        tranche_init = ''
+        for i, mwi in enumerate(mw_slice):
+            if mw <= mwi:
+                name_mw = name[max(0,i-1):i+2]
+                break
+        else:
+            tranche_mw = name[max(0,i-1):i+2]
+        tranche_init += name[i]
+        for i, logpi in enumerate(logp_slice):
+            if logp <= logpi:
+                name_p += name[max(0,i-1):i+2]
+                break
+        else:
             name_p += name[max(0,i-1):i+2]
-            break
-    else:
-        name_p += name[max(0,i-1):i+2]
-    tranche_init += name[i]
-    
-    # return smiles files in match tranche first.
-    tranche = ZINC_PATH/tranche_init
-    for smi in tranche.glob("*/*.smi"):
-        yield smi
-    
-    # return smiles files in neighbor tranches randomly.
-    smi_files = []
-    for n_mw in name_mw:
-        for n_p in name_p:
-            if n_mw + n_p == tranche_init:
-                continue
-            tranche = ZINC_PATH/(n_mw + n_p)
-            for smi in tranche.glob("*/*.smi"):
-                smi_files.append(smi)
-    for i in np.random.permutation(len(smi_files)):
-        yield smi_files[i]
+        tranche_init += name[i]
+        
+        # return smiles files in match tranche first.
+        tranche = ZINC_PATH/tranche_init
+        for smi in tranche.rglob("*.smi"):
+            for m in Chem.SmilesMolSupplier(str(smi)):
+                if m is not None:
+                    yield m
+        
+        # return smiles files in neighbor tranches randomly.
+        smi_files = []
+        for n_mw in name_mw:
+            for n_p in name_p:
+                if n_mw + n_p == tranche_init:
+                    continue
+                tranche = ZINC_PATH/(n_mw + n_p)
+                for smi in tranche.rglob("*.smi"):
+                    smi_files.append(smi)
+        for i in np.random.permutation(len(smi_files)):
+            for m in Chem.SmilesMolSupplier(str(smi)):
+                if m is not None:
+                    yield m
 
 # step 1: select decoys in range
 
@@ -144,21 +161,44 @@ actives = []
 actives_fps = []
 actives_props = []
 for a_file in args.actives:
+    print("Loading actives from {}".format(a_file))
     a_file = Path(a_file)
     if len(a_file.parts) > 1:
         target = a_file.parts[-2]
     else:
         target = a_file.stem
+    print("Target {} loading actives from {}".format(target, a_file))
+    print("loading mols ...")
     mols = [m for m in Chem.SmilesMolSupplier(str(a_file), titleLine=False) if m is not None]
+    print("generating fingerprints ...")
     fps = [AllChem.GetMorganFingerprintAsBitVect(m, 2, nBits=1024) for m in mols]
-    props = [get_prop(m) for m in mols]
+    print("caculating properties ...")
+    props = []
+    for i, m in enumerate(mols):
+        if i % 100 == 0:
+            print("{:10d}/{}".format(i+1,len(mols)))
+        props.append(get_prop_array(m))
+    # props = [get_prop_array(m) for m in mols]
     targets.append(target)
     actives.append(mols)
     actives_fps.append(fps)
     actives_props.append(props)
 
 # write actives
-
+decoys_smi = []
+output_dir = Path(args.output_dir)
+output_dir.mkdir(parents=True, exist_ok=True)
+for i, target in enumerate(targets):
+    tdir = output_dir / target
+    tdir.mkdir(exist_ok=True)
+    a_file = tdir / "actives_final.smi"
+    d_file = tdir / "decoys_final.smi"
+    a_smi = Chem.SmilesWriter(str(a_file), includeHeader=False)
+    for a in actives[i]:
+        a_smi.write(a)
+    a_smi.close()
+    d_smi = Chem.SmilesWriter(str(d_file), includeHeader=False)
+    decoys_smi.append(d_smi)
 
 DONE = [False for i in targets]
 decoys = [[] for i in targets]
@@ -166,7 +206,13 @@ decoys_fps = [[] for i in targets]
 decoys_props = [[] for i in targets]
 decoys_count = [[0 for a in t_as] for t_as in actives]
 decoys_done = [[False for a in t_as] for t_as in actives]
+suppliers = {}
+discard_ids = [set() for i in targets]
+cycle = 0
 while not all(DONE):
+    cycle += 1
+    if cycle % 10 == 1:
+        print(decoys_count)
     for ti, target in enumerate(targets):
         if DONE[ti]: continue
         if all(decoys_done[ti]):
@@ -179,19 +225,26 @@ while not all(DONE):
                 continue
             a_fp = a_fps[ai]
             a_prop = a_props[ai]
-            for m in next_smiles_file(*prop[:2]):
+            if (ti,ai) not in suppliers:
+                mw, logp = a_prop[:2]
+                suppliers[(ti,ai)] = zinc_supplier(mw, logp, args.zinc_path)
+            for m in suppliers[(ti,ai)]:
+                _id = m.GetProp("_Name")
+                if _id in discard_ids[ti]:
+                    continue
                 fp = AllChem.GetMorganFingerprintAsBitVect(m, 2, nBits=1024)
                 if DataStructs.TanimotoSimilarity(a_fp, fp) > args.tc:
                     continue
-                prop = get_prop(m)
+                prop = get_prop_array(m)
                 diff = np.abs(prop-a_prop)
-                if diff > MAX_PROP_DIFF:
+                if np.any(diff > MAX_PROP_DIFF):
                     continue
                 a_simi = DataStructs.BulkTanimotoSimilarity(fp, a_fps)
                 if max(a_simi) > args.tc:
+                    discard_ids[ti].add(_id)
                     continue
                 _continue = False
-                for tj, d_fps in decoys_fps:
+                for tj, d_fps in enumerate(decoys_fps):
                     if ti == tj:
                         max_tc = args.tc_same
                     else:
@@ -202,10 +255,12 @@ while not all(DONE):
                         d_simi = DataStructs.BulkTanimotoSimilarity(fp, fps)
                         if max(d_simi) > args.tc_same:
                             _continue = True
+                            discard_ids[ti].add(_id)
                             break
                     if _continue: break
                 if _continue: continue
-                decoys[ti].appned(m)
+                decoys[ti].append(m)
+                decoys_smi[ti].write(m)
                 decoys_fps[ti].append(fp)
                 decoys_count[ti][ai] += 1
                 if decoys_count[ti][ai] == args.num_decoys:
@@ -215,20 +270,5 @@ while not all(DONE):
                 # run out of zinc mols
                 decoys_done[ti][ai] = True
 
-
-# step 2.2: remove decoys with SAME ID in all ligands (Tc > 0.25) in same target
-# step 2.3: remove decoys similar to decoys (Tc > 0.6) in same target
-
-output_dir = Path(args.output_dir)
-output_dir.mkdir(parents=True, exist_ok=True)
-for i, target in enumerate(targets):
-    tdir = output_dir / target
-    tdir.mkdir(exist_ok=True)
-    a_file = tdir / "actives_final.smi"
-    d_file = tdir / "decoys_final.smi"
-    a_smi = Chem.SmilesWriter(str(a_file), includeHeader=False)
-    d_smi = Chem.SmilesWriter(str(d_file), includeHeader=False)
-    for a in actives[i]:
-        a_smi.write(a)
-    for d in decoys[i]:
-        d_smi.write(d)
+for smi in decoys_smi:
+    smi.close()

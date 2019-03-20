@@ -1,6 +1,6 @@
 """Generating smiles decoys from ZINC.
 """
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 __author__ = "Jincai Yang, jincai.yang42@gmail.com"
 
 import yaml
@@ -17,7 +17,7 @@ from rdkit.Chem import Descriptors as D
 from rdkit.Chem import rdMolDescriptors as CD
 
 example_text = """Example:
-    genDecoys.py -a target/actives.smi -z zinc_path
+    genDecoys.py -a target/actives.smi -z zinc_path -o output
     
 """
 parser = argparse.ArgumentParser(
@@ -91,7 +91,7 @@ parser.add_argument(
     "filter out similar decoys against DIFFERENT targets base on Tanimoto Coefficient, default: 1, meaning no filter"
 )
 parser.add_argument(
-    "-o", "--output", default="output", help="output dir, default: output")
+    "-o", "--output", required=True, help="output dir")
 args = parser.parse_args()
 
 
@@ -182,8 +182,8 @@ def similar(fp, fps, max_tc, step=128):
 # step 1: select decoys in range
 
 output = Path(args.output)
-# output.mkdir(parents=True, exist_ok=True)
-output.mkdir(parents=True)
+output.mkdir(parents=True, exist_ok=True)
+# output.mkdir(parents=True)
 
 # step 2.1: remove decoys with SAME ID against all ligands in same target
 targets = []
@@ -268,6 +268,8 @@ for tranche, group_idx in actives_tranches.items():
                 continue
             if _id in discard_ids[ti]:
                 continue
+            if np.random.rand() > args.probability:
+                continue
             a_fp = actives_fps[ti][ai]
             if DataStructs.TanimotoSimilarity(fp, a_fp) > args.tc:
                 continue
@@ -281,18 +283,16 @@ for tranche, group_idx in actives_tranches.items():
             if args.tc_same < 1 and similar(fp, decoys_fps[ti], args.tc_same):
                 discard_ids[ti].add(_id)
                 continue
-            _continue = False
             if args.tc_diff < 1:
+                _continue = False
                 for tj, d_fps in enumerate(decoys_fps):
                     if ti == tj:
                         continue
                     if similar(fp, d_fps, args.tc_diff):
                         global_discard_ids.add(_id)
-                    _continue = True
-                    break
+                        _continue = True
+                        break
                 if _continue: continue
-            if np.random.rand() > args.probability:
-                continue
             decoys_smi[ti].write(m)
             decoys_fps[ti].append(fp)
             decoys_props[ti].append(prop)

@@ -20,20 +20,21 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument(
     "-t", "--target_dir", nargs='+', required=True, help="target dir names")
 parser.add_argument(
-    "-o", "--output", help="output dir, default will save figure in each target dir.")
+    "-o",
+    "--output",
+    help="output dir, default will save figure in each target dir.")
 parser.add_argument(
     "-d",
     "--decoys_file",
     default="decoys_final.smi",
-    help="decoys file name, default: decoys_final.smi" 
-)
+    help="decoys file name, default: decoys_final.smi")
 parser.add_argument(
     "-a",
     "--actives_file",
     default="actives_final.smi",
-    help="actives file name, default: actives_final.smi" 
-)
+    help="actives file name, default: actives_final.smi")
 args = parser.parse_args()
+
 
 def get_prop_array(mol):
     mw = CD.CalcExactMolWt(mol)
@@ -43,6 +44,7 @@ def get_prop_array(mol):
     hba = CD.CalcNumHBA(mol)
     q = Chem.GetFormalCharge(mol)
     return np.array([mw, logp, rotb, hbd, hba, q])
+
 
 if args.output:
     output = Path(args.output)
@@ -63,33 +65,46 @@ for tdir in args.target_dir:
     actives_props = np.array(actives_props)
     decoys_props = np.array(decoys_props)
     props_name = ["mw", "logp", "rotb", "hbd", "hba", "q"]
-    fig, axes = plt.subplots(
-            nrows=2, ncols=3, figsize=(24, 12))
+    fig, axes = plt.subplots(nrows=2, ncols=3, figsize=(24, 12))
     axes = axes.flatten()
     for i, p in enumerate(props_name):
         ax = axes[i]
-        a_props = actives_props[:,i]
-        d_props = decoys_props[:,i]
+        a_props = actives_props[:, i]
+        d_props = decoys_props[:, i]
         if p in ["mw", "logp"]:
-            sns.kdeplot(a_props, label=p+'_active', color="blue", ax=ax)
-            sns.kdeplot(d_props, label=p+'_decoy', color="red",  ax=ax)
+            sns.kdeplot(a_props, label=p + '_active', color="blue", ax=ax)
+            sns.kdeplot(d_props, label=p + '_decoy', color="red", ax=ax)
         else:
-            prop_max = max(max(a_props),max(d_props))
-            prop_min = min(min(a_props),min(d_props))
+            prop_max = max(max(a_props), max(d_props))
+            prop_min = min(min(a_props), min(d_props))
             if p == 'q':
                 prop_max = max(3, prop_max)
                 prop_min = min(-3, prop_min)
-            prop_xticks = np.arange(prop_min, prop_max+1)
+            prop_xticks = np.arange(prop_min, prop_max + 1)
             prop_bins = prop_xticks - 0.5
-            sns.distplot(a_props, bins=prop_bins, label=p+'_active', color="blue", kde=False, norm_hist=True, ax=ax)
-            sns.distplot(d_props, bins=prop_bins, label=p+'_decoy', color="red", kde=False, norm_hist=True, ax=ax)
+            sns.distplot(
+                a_props,
+                bins=prop_bins,
+                label=p + '_active',
+                color="blue",
+                kde=False,
+                norm_hist=True,
+                ax=ax)
+            sns.distplot(
+                d_props,
+                bins=prop_bins,
+                label=p + '_decoy',
+                color="red",
+                kde=False,
+                norm_hist=True,
+                ax=ax)
             ax.legend()
             ax.set_xticks(prop_xticks)
         ax.autoscale(enable=True, axis='y')
-    fig_path = tdir/"props.png"
+    fig_path = tdir / "props.png"
     fig_path = fig_path.resolve()
     fig.savefig(fig_path)
     if args.output:
-        fig_path = output/ "_".join(fig_path.parts[-3:])
+        fig_path = output / "_".join(fig_path.parts[-3:])
         fig.savefig(fig_path)
     print("figure saved at {}".format(fig_path))

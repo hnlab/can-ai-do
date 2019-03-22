@@ -68,25 +68,23 @@ for tdir in args.target_dir:
     axes = axes.flatten()
     for i, p in enumerate(props_name):
         ax = axes[i]
+        a_props = actives_props[:,i]
+        d_props = decoys_props[:,i]
         if p in ["mw", "logp"]:
-            sns.kdeplot(actives_props[:,i], label=p+'_active', color="blue", ax=ax)
-            sns.kdeplot(decoys_props[:,i], label=p+'_decoy', color="red",  ax=ax)
+            sns.kdeplot(a_props, label=p+'_active', color="blue", ax=ax)
+            sns.kdeplot(d_props, label=p+'_decoy', color="red",  ax=ax)
         else:
-            a_props = list(map(int, actives_props[:,i]))
-            d_props = list(map(int, decoys_props[:,i]))
             prop_max = max(max(a_props),max(d_props))
             prop_min = min(min(a_props),min(d_props))
+            if p == 'q':
+                prop_max = max(3, prop_max)
+                prop_min = min(-3, prop_min)
             prop_xticks = np.arange(prop_min, prop_max+1)
             prop_bins = prop_xticks - 0.5
             sns.distplot(a_props, bins=prop_bins, label=p+'_active', color="blue", kde=False, norm_hist=True, ax=ax)
             sns.distplot(d_props, bins=prop_bins, label=p+'_decoy', color="red", kde=False, norm_hist=True, ax=ax)
             ax.legend()
             ax.set_xticks(prop_xticks)
-            # a_count = list(map(int, actives_props[:,i]))
-            # d_count = list(map(int, decoys_props[:,i]))
-            # ax = axes[i]
-            # ax.hist(a_count)
-            # ax.hist(d_count)
         ax.autoscale(enable=True, axis='y')
     fig_path = tdir/"props.png"
     fig_path = fig_path.resolve()

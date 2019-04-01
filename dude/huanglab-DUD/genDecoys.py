@@ -98,6 +98,17 @@ args = parser.parse_args()
 MAX_PROP_DIFF = np.array([
     args.mw, args.logp, args.rotb, args.hbd, args.hba, args.q])
 
+### DEFAULTS FROM MYSINGER - these are used if property not specified
+PROP_DIFF = np.array([
+    [ 20,  35,  50,  65,  80, 100, 125],#"MWT_RANGES"
+    [0.4, 0.8, 1.2, 1.8, 2.4, 3.0, 3.6],#"LOGP_RANGES"
+    [  1,   2,   2,   3,   3,   4,   5],#"RB_RANGES"
+    [  0,   0,   1,   1,   2,   2,   3],#"HBD_RANGES"
+    [  0,   1,   2,   2,   3,   3,   4],#"HBA_RANGES"
+    [  0,   0,   0,   0,   0,   1,   2],#"CHG_RANGES"
+    ])
+PROP_DIFF = PROP_DIFF.T
+
 def get_prop_array(mol):
     mw = CD.CalcExactMolWt(mol)
     logp = Chem.Crippen.MolLogP(mol)
@@ -123,7 +134,7 @@ def map_tranche(mw, logp):
             tranche += name[i]
             break
     else:
-        tranche += name[i]
+        tranche += name[i+1]
     return tranche
 
 def extend_tranches(tranche):
@@ -196,15 +207,25 @@ for a_file in args.actives:
         target = a_file.parts[-2]
     else:
         target = a_file.stem
-    mols = [m for m in Chem.SmilesMolSupplier(str(a_file), titleLine=False) if m is not None]
-    fps = [AllChem.GetMorganFingerprintAsBitVect(m, 2, nBits=1024) for m in mols]
+    mols = []
+    fps = []
     props = []
-    props = [get_prop_array(m) for m in mols]
+    total_mol = 0
+    for m in Chem.SmilesMolSupplier(str(a_file), titleLine=False):
+        if m is None: continue
+        total_mol += 1
+        prop = get_prop_array(m)
+        # mw, logp = prop[:2]
+        # if mw > 500: continue
+        # if logp > 5: continue
+        fps.append(AllChem.GetMorganFingerprintAsBitVect(m, 2, nBits=1024))
+        props.append(prop)
+        mols.append(m)
     targets.append(target)
     actives.append(mols)
     actives_fps.append(fps)
     actives_props.append(props)
-    print("{} loading {:7s} {:4d} actives from {}".format(datetime.now(), target, len(mols), a_file))
+    print("{} loading {:7s} {:4d}/{:4d} actives from {}".format(datetime.now(), target, len(mols), total_mol, a_file))
 
 # write actives and group actives into tranches
 decoys_smi = []
@@ -244,8 +265,10 @@ for tranche, group_idx in actives_tranches.items():
     group_idx = np.array(group_idx)
     no_progress = 0
     for m in tranche_supplier(zinc_path, tranche):
+        if np.random.rand() > args.probability:
+            continue
         no_progress += 1
-        if no_progress >= 10000:
+        if no_progress >= 30000:
             for t, i in group_idx:
                 if decoys_count[t][i] < args.num_decoys:
                     actives_faild[t].append(actives[t][i])
@@ -267,8 +290,6 @@ for tranche, group_idx in actives_tranches.items():
             if decoys_count[ti][ai] >= args.num_decoys:
                 continue
             if _id in discard_ids[ti]:
-                continue
-            if np.random.rand() > args.probability:
                 continue
             a_fp = actives_fps[ti][ai]
             if DataStructs.TanimotoSimilarity(fp, a_fp) > args.tc:
@@ -301,6 +322,7 @@ for tranche, group_idx in actives_tranches.items():
             if args.tc_diff < 1:
                 global_discard_ids.add(_id)
             no_progress = 0
+            break
 sum_decoys = sum([i for t in decoys_count for i in t])
 print("{} generate {:8d}/{} from {:10d} zinc mols".format(
     datetime.now(), sum_decoys, total_decoys, mol_count))

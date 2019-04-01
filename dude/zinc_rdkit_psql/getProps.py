@@ -1,7 +1,8 @@
 """Get Props and save in smiles.
 """
+import gzip
 import argparse
-import pandas as pd
+from pathlib import Path
 from datetime import datetime
 
 from rdkit import Chem
@@ -31,13 +32,6 @@ def getProp(mol_line):
     return tuple([smiles, mol_id, mw, logp, rotb, hbd, hba, q])
 
 
-def getMol(mol_line):
-    smiles, mol_id = mol_line.split()[:2]
-    mol = Chem.MolFromSmiles(smiles)
-    if mol is None: return None
-    return tuple([mol, 0, 0, 0, 0, 0, 0, 0])
-
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("-s", "--smiles", required=True)
@@ -45,9 +39,18 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     start = datetime.now()
-
-    f = open(args.smiles)
-    smi = open(args.output, 'w')
+    
+    smiles = Path(args.smiles)
+    if smiles.suffix == '.gz':
+        f = gzip.open(smiles, 'rt')
+    else:
+        f = open(smiles, 'r')
+    output = Path(args.output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    if output.suffix == '.gz':
+        smi = gzip.open(args.output, 'wt')
+    else:
+        smi = open(args.output, 'w')
     smi.write("smiles zinc_id mw logp rotb hbd hba q\n")
     fmt = '{} {} {:.2f} {:.2f} {} {} {} {}\n'
     pool = Pool(processes=4)
@@ -58,7 +61,6 @@ if __name__ == '__main__':
         print("{}: Saved {:8d}/{:8d} in {}".format(
             datetime.now() - start, counter_mol, counter_smi, args.output))
         results = pool.map(getProp, itertools.islice(f, N))
-        # results = pool.map(getMol, itertools.islice(f, N))
         counter_smi += N
         if results:
             for r in results:

@@ -57,7 +57,7 @@ def props_generator_from_files(smiles_files):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("-s", "--smiles", nargs='+', required=True)
-    parser.add_argument("-o", "--output", default='raw.sql.gz')
+    parser.add_argument("-o", "--output", default='raw')
     args = parser.parse_args()
     
     start = dt.now()

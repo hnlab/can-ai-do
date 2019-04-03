@@ -104,7 +104,7 @@ if __name__ == '__main__':
     # load smiles and props into temp database
     # using zinc_id as primary key, do nothing when same zinc_id.
     props_generator = props_generator_from_files(args.smiles)
-    insert_query = 'INSERT INTO raw.props values %s ON CONFLICT DO NOTHING'
+    insert_query = 'INSERT INTO raw.props values %s ON CONFLICT (zinc_id) DO NOTHING'
     psycopg2.extras.execute_values(
         cursor, insert_query, props_generator, template=None, page_size=100)
 
@@ -123,7 +123,7 @@ if __name__ == '__main__':
     
     # dump data and delete database
     output = Path(args.output).with_suffix('.sql.gz')
-    subprocess.call(['pg_dump', '-p', port, '-n', 'raw', '--no-owner', '-Z', '9', dbname, '-f', output])
+    subprocess.call(['pg_dump', '-p', port, '--no-owner', '-Z', '9', dbname, '-f', output])
     subprocess.call(['pg_ctl', '-o', port_option, '-D', dbpath, '-l', 'logfile', 'stop'])
     shutil.rmtree(dbpath)
     print("Total elapsed time: {}".format(dt.now()-start))

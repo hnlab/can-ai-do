@@ -70,6 +70,7 @@ for sql_file in args.sql:
     DROP SCHEMA raw;
     """
     cursor.execute(insert_query)
+    connect.commit()
 create_indexes = """
     CREATE INDEX IF NOT EXISTS fps_mfp2_idx ON dud.fps USING gist(mfp2);
     CREATE INDEX IF NOT EXISTS molidx ON dud.mols USING gist(m);

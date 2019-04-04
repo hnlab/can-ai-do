@@ -104,7 +104,7 @@ if __name__ == '__main__':
     # load smiles and props into temp database
     # using zinc_id as primary key, do nothing when same zinc_id.
     props_generator = props_generator_from_files(args.smiles)
-    insert_query = 'INSERT INTO raw.props values %s ON CONFLICT (zinc_id) DO NOTHING'
+    insert_query = 'INSERT INTO raw.props VALUES %s ON CONFLICT (zinc_id) DO NOTHING'
     psycopg2.extras.execute_values(
         cursor, insert_query, props_generator, template=None, page_size=100)
 

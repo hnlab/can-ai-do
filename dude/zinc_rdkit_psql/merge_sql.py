@@ -59,22 +59,27 @@ connect.commit()
 # using zinc_id as primary key, do nothing when same zinc_id.
 for sql_file in args.sql:
     sql_file = Path(sql_file).absolute()
-    gunzip = subprocess.Popen(['gunzip', '--stdout', str(sql_file)], stdout=subprocess.PIPE)
-    restore_sql = 'gunzip < {} | psql -p {} {}'.format(sql_file, args.port, args.dbname)
+    restore_sql = 'gunzip < {} | psql -p {} {}'.format(
+            sql_file, args.port, args.dbname)
     subprocess.check_call(restore_sql, shell=True)
     insert_query = """
-    INSERT INTO dud.props (SELECT * FROM raw.props) ON CONFLICT (zinc_id) DO NOTHING;
-    INSERT INTO dud.fps (SELECT * FROM raw.fps) ON CONFLICT (zinc_id) DO NOTHING;
-    INSERT INTO dud.mols (SELECT * FROM raw.mols) ON CONFLICT (zinc_id) DO NOTHING;
+    INSERT INTO dud.props (SELECT * FROM raw.props)
+        ON CONFLICT (zinc_id) DO NOTHING;
+    INSERT INTO dud.fps (SELECT * FROM raw.fps)
+        ON CONFLICT (zinc_id) DO NOTHING;
+    INSERT INTO dud.mols (SELECT * FROM raw.mols)
+        ON CONFLICT (zinc_id) DO NOTHING;
     DROP TABLE raw.fps, raw.mols, raw.props;
     DROP SCHEMA raw;
     """
     cursor.execute(insert_query)
     connect.commit()
+
 create_indexes = """
-    CREATE INDEX IF NOT EXISTS fps_mfp2_idx ON dud.fps USING gist(mfp2);
-    CREATE INDEX IF NOT EXISTS molidx ON dud.mols USING gist(m);
-    """
+CREATE INDEX IF NOT EXISTS fps_mfp2_idx ON dud.fps USING gist(mfp2);
+CREATE INDEX IF NOT EXISTS molidx ON dud.mols USING gist(m);
+CREATE INDEX IF NOT EXISTS prop_idx ON dud.props (mw, logp, rotb, hba, hbd, q);
+"""
     # CREATE INDEX mw_idx ON dud.props (mw, logp);
 cursor.execute(create_indexes)
 connect.commit()

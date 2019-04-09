@@ -15,6 +15,8 @@ from rdkit.DataStructs import BulkTanimotoSimilarity
 import psycopg2
 import psycopg2.extras
 
+from multiprocessing import Pool
+
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("-a", "--actives", nargs='+', required=True)
 parser.add_argument("-D", "--dbpath", required=True)
@@ -81,10 +83,11 @@ SELECT zinc_id, smiles
    AND hbd = {hbd}
    AND hba = {hba}
    AND q = {q}
-   AND NOT EXISTS (SELECT 1 FROM actives_fps
+   AND NOT EXISTS (SELECT 1 FROM {t_active}_fps
                     WHERE fp%mfp2 AND target = '{target}')
-   AND EXISTS (SELECT 1 FROM actives_fps
-                WHERE fp%mfp2 AND target <> '{target}')
+   AND (NOT EXISTS (SELECT 1 FROM {t_active}_fps WHERE target <> '{target}')
+         OR EXISTS (SELECT 1 FROM {t_active}_fps WHERE target <> '{target}' AND fp%mfp2))
+ LIMIT {num}
 ON CONFLICT (zinc_id) DO NOTHING;
 
 INSERT INTO decoys
@@ -98,10 +101,11 @@ SELECT zinc_id, smiles
    AND hbd = {hbd}
    AND ABS (hba - {hba}) in  (0, 1)
    AND q = {q}
-   AND NOT EXISTS (SELECT 1 FROM actives_fps
+   AND NOT EXISTS (SELECT 1 FROM {t_active}_fps
                     WHERE fp%mfp2 AND target = '{target}')
-   AND EXISTS (SELECT 1 FROM actives_fps
-                WHERE fp%mfp2 AND target <> '{target}')
+   AND (NOT EXISTS (SELECT 1 FROM {t_active}_fps WHERE target <> '{target}')
+         OR EXISTS (SELECT 1 FROM {t_active}_fps WHERE target <> '{target}' AND fp%mfp2))
+ LIMIT {num}
 ON CONFLICT (zinc_id) DO NOTHING;
     
 INSERT INTO decoys
@@ -115,10 +119,11 @@ SELECT zinc_id, smiles
    AND ABS (hbd - {hbd}) in (0, 1)
    AND ABS (hba - {hba}) in (0, 1, 2)
    AND q = {q}
-   AND NOT EXISTS (SELECT 1 FROM actives_fps
+   AND NOT EXISTS (SELECT 1 FROM {t_active}_fps
                     WHERE fp%mfp2 AND target = '{target}')
-   AND EXISTS (SELECT 1 FROM actives_fps
-                WHERE fp%mfp2 AND target <> '{target}')
+   AND (NOT EXISTS (SELECT 1 FROM {t_active}_fps WHERE target <> '{target}')
+         OR EXISTS (SELECT 1 FROM {t_active}_fps WHERE target <> '{target}' AND fp%mfp2))
+ LIMIT {num}
 ON CONFLICT (zinc_id) DO NOTHING;
 
 INSERT INTO decoys
@@ -132,10 +137,11 @@ SELECT zinc_id, smiles
    AND ABS (hbd - {hbd}) in (0, 1)
    AND ABS (hba - {hba}) in (0, 1, 2)
    AND q = {q}
-   AND NOT EXISTS (SELECT 1 FROM actives_fps
+   AND NOT EXISTS (SELECT 1 FROM {t_active}_fps
                     WHERE fp%mfp2 AND target = '{target}')
-   AND EXISTS (SELECT 1 FROM actives_fps
-                WHERE fp%mfp2 AND target <> '{target}')
+   AND (NOT EXISTS (SELECT 1 FROM {t_active}_fps WHERE target <> '{target}')
+         OR EXISTS (SELECT 1 FROM {t_active}_fps WHERE target <> '{target}' AND fp%mfp2))
+ LIMIT {num}
 ON CONFLICT (zinc_id) DO NOTHING;
 
 INSERT INTO decoys
@@ -149,10 +155,11 @@ SELECT zinc_id, smiles
    AND ABS (hbd - {hbd}) in (0, 1, 2)
    AND ABS (hba - {hba}) in (0, 1, 2, 3)
    AND q = {q}
-   AND NOT EXISTS (SELECT 1 FROM actives_fps
+   AND NOT EXISTS (SELECT 1 FROM {t_active}_fps
                     WHERE fp%mfp2 AND target = '{target}')
-   AND EXISTS (SELECT 1 FROM actives_fps
-                WHERE fp%mfp2 AND target <> '{target}')
+   AND (NOT EXISTS (SELECT 1 FROM {t_active}_fps WHERE target <> '{target}')
+         OR EXISTS (SELECT 1 FROM {t_active}_fps WHERE target <> '{target}' AND fp%mfp2))
+ LIMIT {num}
 ON CONFLICT (zinc_id) DO NOTHING;
 
 INSERT INTO decoys
@@ -166,10 +173,11 @@ SELECT zinc_id, smiles
    AND ABS (hbd - {hbd}) in (0, 1, 2)
    AND ABS (hba - {hba}) in (0, 1, 2, 3)
    AND ABS (q - {q}) in (0, 1)
-   AND NOT EXISTS (SELECT 1 FROM actives_fps
+   AND NOT EXISTS (SELECT 1 FROM {t_active}_fps
                     WHERE fp%mfp2 AND target = '{target}')
-   AND EXISTS (SELECT 1 FROM actives_fps
-                WHERE fp%mfp2 AND target <> '{target}')
+   AND (NOT EXISTS (SELECT 1 FROM {t_active}_fps WHERE target <> '{target}')
+         OR EXISTS (SELECT 1 FROM {t_active}_fps WHERE target <> '{target}' AND fp%mfp2))
+ LIMIT {num}
 ON CONFLICT (zinc_id) DO NOTHING;
 
 INSERT INTO decoys
@@ -183,13 +191,14 @@ SELECT zinc_id, smiles
    AND ABS (hbd - {hbd}) in (0, 1, 2, 3)
    AND ABS (hba - {hba}) in (0, 1, 2, 3, 4)
    AND ABS (q - {q}) in (0, 1, 2)
-   AND NOT EXISTS (SELECT 1 FROM actives_fps
+   AND NOT EXISTS (SELECT 1 FROM {t_active}_fps
                     WHERE fp%mfp2 AND target = '{target}')
-   AND EXISTS (SELECT 1 FROM actives_fps
-                WHERE fp%mfp2 AND target <> '{target}')
+   AND (NOT EXISTS (SELECT 1 FROM {t_active}_fps WHERE target <> '{target}')
+         OR EXISTS (SELECT 1 FROM {t_active}_fps WHERE target <> '{target}' AND fp%mfp2))
+ LIMIT {num}
 ON CONFLICT (zinc_id) DO NOTHING;
 
-SELECT smiles, zinc_id FROM decoys;
+SELECT smiles, zinc_id FROM decoys LIMIT {num};
 
 """
 # AND zinc_id NOT IN (SELECT zinc_id FORM decoys)
@@ -220,58 +229,72 @@ for a_file in args.actives:
         dt.now() - start, target, len(props), a_file))
 
 # init a temp postdatabase
-subprocess.call(['initdb', '-D', args.dbpath])
-port_option = "-F -p {}".format(args.port)
-code = subprocess.call(['pg_ctl', '-o', port_option, '-D', args.dbpath,'-l','logfile', 'start'])
+# subprocess.call(['initdb', '-D', args.dbpath])
+# port_option = "-F -p {}".format(args.port)
+# code = subprocess.call(['pg_ctl', '-o', port_option, '-D', args.dbpath,'-l','logfile', 'start'])
 # sleep 3 seconds to wait pg_ctl start succeed.
-import time
-time.sleep(5)
+# import time
+# time.sleep(5)
 connect = psycopg2.connect(host=args.host, dbname=args.dbname, port=args.port)
 cursor = connect.cursor()
 
-
+active_table_name = 'active'+str(abs(hash(''.join(args.actives) + str(dt.now()))))
 # init tables for saving actives
 init_actives = """
-    DROP TABLE IF EXISTS actives_fps;
-    DROP TABLE IF EXISTS actives;
-    CREATE TABLE actives (
-        name text PRIMARY KEY,
+    DROP TABLE IF EXISTS {t_active}_fps;
+    DROP TABLE IF EXISTS {t_active};
+    CREATE TABLE {t_active} (
+        name text,
         smiles text,
         target text);
-    CREATE TABLE actives_fps (
-        name text PRIMARY KEY,
+    CREATE TABLE {t_active}_fps (
+        name text,
         fp bfp,
         target text);
-    """
+    """.format(t_active=active_table_name)
 cursor.execute(init_actives)
 # connect.commit()
 
 # generate fps into table actives_fps
 for i, target in enumerate(targets):
     # props: mol_id, smiles, mw, logp, rotb, hbd, hba, q
-    insert_query = 'INSERT INTO actives VALUES %s ON CONFLICT (name) DO NOTHING'
+    insert_query = 'INSERT INTO {t_active} VALUES %s'.format(t_active=active_table_name)
     actives_values = [(p[0], p[1], target) for p in actives_props[i]]
     psycopg2.extras.execute_values(
         cursor, insert_query, actives_values, template=None, page_size=100)
     cursor.execute("""
-        INSERT INTO actives_fps
+        INSERT INTO {t_active}_fps
         SELECT name, morganbv_fp(mol_from_smiles(smiles::cstring)) as fp, target
-        FROM actives;
-        CREATE INDEX IF NOT EXISTS afps_idx ON actives_fps USING gist(fp);
-        """)
+        FROM {t_active};
+        """.format(t_active=active_table_name)
+        )
     # connect.commit()
 
 t_idx = dt.now()
 create_index = """
-DROP INDEX IF EXISTS mw_logp_idx;
+CREATE INDEX IF NOT EXISTS afps_idx ON {t_active}_fps USING gist(fp);
+CREATE INDEX IF NOT EXISTS target_idx ON {t_active}_fps (target);
 CREATE INDEX IF NOT EXISTS prop_idx ON dud.props (mw, logp, rotb, hba, hbd, q);
-"""
+""".format(t_active=active_table_name)
 # CREATE INDEX IF NOT EXISTS actives_fps_idx ON actives_fps USING gist(fp);
 cursor.execute(create_index)
 connect.commit()
-print("Time for create index mw_logp_idx: {}".format(dt.now() - t_idx))
+print("Time for create index: {}".format(dt.now() - t_idx))
+
+def generate_decoys(kwargs):
+    _t = dt.now()
+    _connect = psycopg2.connect(host=args.host, dbname=args.dbname, port=args.port)
+    _cursor = _connect.cursor()
+    _cursor.execute(decoys_query.format(**kwargs))
+    _decoys = _cursor.fetchall()
+    _connect.commit()
+    _connect.close()
+    print("Time for query {} decoys for 1 active: {}".format(len(_decoys), dt.now() - _t))
+    return _decoys
+
 # get decoys for each actives
 output = Path(args.output)
+output.mkdir(parents=True, exist_ok=True)
 for i, target in enumerate(targets):
     tdir = output / target
     tdir.mkdir(exist_ok=True)
@@ -284,27 +307,30 @@ for i, target in enumerate(targets):
             # p: mol_id, smiles, mw, logp, rotb, hbd, hba, q
             f.write('{} {}\n'.format(p[1], p[0]))
     f = open(d_file, 'w')
+    job_kwargs = []
     for p in actives_props[i]:
         mol_id, smiles, mw, logp, rotb, hbd, hba, q = p
-        t_q = dt.now()
-        cursor.execute(decoys_query.format(
-            target=target, num=750, mw=mw, logp=logp, rotb=rotb, hbd=hbd, hba=hba, q=q))
-        print("Time for query decoys for {}: {}".format(mol_id, dt.now() - t_q))
-        decoys = cursor.fetchall()
-        print(decoys)
-        for smiles, name in random.sample(decoys, min(50,len(decoys))):
-            f.write('{} {}\n'.format(smiles, name))
-        connect.commit()
+        job_kwargs.append({'target':target,
+            't_active':active_table_name,
+            'num':750, 'mw':mw, 'logp':logp, 'rotb':rotb, 'hbd':hbd, 'hba':hba, 'q':q})
+    pool = Pool()
+    for idx in range(0, len(job_kwargs), 16):
+        results = pool.map(generate_decoys, job_kwargs[idx:idx+16])
+        # results = map(generate_decoys, job_kwargs)
+        for decoys in results:
+            for smiles, name in random.sample(decoys, min(50,len(decoys))):
+                f.write('{} {}\n'.format(smiles, name))
+    pool.close()
     f.close()
 
 rm_actives = """
-    DROP TABLE IF EXISTS actives_fps;
-    DROP TABLE IF EXISTS actives;
-    """
+    DROP TABLE IF EXISTS {t_active}_fps;
+    DROP TABLE IF EXISTS {t_active};
+    """.format(t_active=active_table_name)
 cursor.execute(rm_actives)
 connect.commit()
 connect.close()
-subprocess.call(['pg_ctl', '-o', port_option, '-D', args.dbpath, '-l', 'logfile', 'stop'])
+# subprocess.call(['pg_ctl', '-o', port_option, '-D', args.dbpath, '-l', 'logfile', 'stop'])
 print("you can connect to db using:\n" +
 "pg_ctl -o '-F -p {}' -D {} -l logfile start\n".format(args.port, args.dbpath) +
 "psql -p {} {}\n".format(args.port, args.dbname))

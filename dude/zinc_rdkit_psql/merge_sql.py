@@ -1,5 +1,6 @@
-"""Load mols from smiles into database.
+"""Combine sql.gz into database.
 """
+import time
 import shutil
 import argparse
 import subprocess
@@ -10,23 +11,27 @@ import psycopg2
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("-s", "--sql", nargs='+', required=True)
-parser.add_argument("-D", "--dbpath", required=True)
-parser.add_argument("-d", "--dbname", required=True)
+parser.add_argument("-D", "--dbpath")
+parser.add_argument("-d", "--dbname", required=True, help="zinc12 or zinc15")
 parser.add_argument("--host", default='localhost')
 parser.add_argument("-p", "--port", default='5432')
 args = parser.parse_args()
 
 start = dt.now()
 
-# init a temp postdatabase
-subprocess.call(['initdb', '-D', args.dbpath])
-port_option = "-F -p {}".format(args.port)
-code = subprocess.call(['pg_ctl', '-o', port_option, '-D', args.dbpath,'-l','logfile', 'start'])
-# sleep 3 seconds to wait pg_ctl start succeed.
-import time
-time.sleep(5)
-subprocess.call(['createdb', '-p', args.port, args.dbname])
-time.sleep(3)
+if args.dbpath is not None:
+    # init a temp postdatabase
+    subprocess.call(['initdb', '-D', args.dbpath])
+    port_option = "-F -p {}".format(args.port)
+    code = subprocess.call([
+        'pg_ctl', '-o', port_option, '-D', args.dbpath, '-l', 'logfile',
+        'start'
+    ])
+    # sleep 3 seconds to wait pg_ctl start succeed.
+    time.sleep(5)
+    subprocess.call(['createdb', '-p', args.port, args.dbname])
+    time.sleep(3)
+
 connect = psycopg2.connect(host=args.host, dbname=args.dbname, port=args.port)
 cursor = connect.cursor()
 
@@ -57,10 +62,10 @@ cursor.execute(init_dud)
 connect.commit()
 # load smiles and props into temp database
 # using zinc_id as primary key, do nothing when same zinc_id.
-for sql_file in args.sql:
+for i, sql_file in enumerate(args.sql):
     sql_file = Path(sql_file).absolute()
-    restore_sql = 'gunzip < {} | psql -p {} {}'.format(
-            sql_file, args.port, args.dbname)
+    restore_sql = 'gunzip < {} | psql -p {} {}'.format(sql_file, args.port,
+                                                       args.dbname)
     subprocess.check_call(restore_sql, shell=True)
     insert_query = """
     INSERT INTO dud.props (SELECT * FROM raw.props)
@@ -74,18 +79,16 @@ for sql_file in args.sql:
     """
     cursor.execute(insert_query)
     connect.commit()
+    print("{}: Loading {:4d}/{} {}".format(dt.now() - start, i, len(args.sql),
+                                           sql_file))
 
 create_indexes = """
 CREATE INDEX IF NOT EXISTS fps_mfp2_idx ON dud.fps USING gist(mfp2);
 CREATE INDEX IF NOT EXISTS molidx ON dud.mols USING gist(m);
 CREATE INDEX IF NOT EXISTS prop_idx ON dud.props (mw, logp, rotb, hba, hbd, q);
 """
-    # CREATE INDEX mw_idx ON dud.props (mw, logp);
 cursor.execute(create_indexes)
 connect.commit()
 connect.close()
-subprocess.call(['pg_ctl', '-o', port_option, '-D', args.dbpath, '-l', 'logfile', 'stop'])
-print("you can connect to db using:\n" +
-"pg_ctl -o '-F -p {}' -D {} -l logfile start\n".format(args.port, args.dbpath) +
-"psql -p {} {}\n".format(args.port, args.dbname))
-print("Total elapsed time: {}".format(dt.now()-start))
+
+print("Total elapsed time: {}".format(dt.now() - start))

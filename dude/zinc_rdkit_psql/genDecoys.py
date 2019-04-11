@@ -36,12 +36,28 @@ parser.add_argument(
     help=
     "max similar (tc, 0-1) between actives and decoys agaist different targets, default 0.0"
 )
+parser.add_argument(
+    "-n",
+    default=50,
+    type=int,
+    help=
+    "n decoys per acive. default 50"
+)
+parser.add_argument(
+    "-N",
+    default=50,
+    type=int,
+    help=
+    "N candidate decoys per acive, random select n decoys from N candidate decoys, N >= n. default: N = n"
+)
 parser.add_argument("-d", "--dbname", required=True)
 parser.add_argument("--host", default='localhost')
 parser.add_argument("-p", "--port", default='5432')
 parser.add_argument("-o", "--output", required=True, help="output dir")
 args = parser.parse_args()
 
+if args.N is None:
+    args.N = args.n
 
 def getProp(mol_line):
     smiles, mol_id = mol_line.split()[:2]
@@ -94,8 +110,7 @@ set rdkit.tanimoto_threshold={tc};
 INSERT INTO decoys
 SELECT zinc_id, smiles
   FROM dud.props JOIN dud.fps using (zinc_id)
- WHERE (SELECT COUNT(*) FROM decoys) <= {num}
-   AND ABS (mw - {mw}) <= 20.0 
+ WHERE ABS (mw - {mw}) <= 20.0
    AND ABS (logp - {logp}) <= 0.4
    AND ABS (rotb - {rotb}) in (0, 1)
    AND hbd = {hbd}
@@ -107,14 +122,13 @@ SELECT zinc_id, smiles
          OR EXISTS (SELECT 1 FROM {t_active}_fps WHERE target <> '{target}'
                        AND tanimoto_sml(fp,mfp2) > {x}))
     --   OR EXISTS (SELECT 1 FROM {t_active}_fps WHERE target <> '{target}' AND fp%mfp2))
- LIMIT {num}
+ LIMIT {num} - (SELECT COUNT(*) FROM decoys)
 ON CONFLICT (zinc_id) DO NOTHING;
 
 INSERT INTO decoys
 SELECT zinc_id, smiles
   FROM dud.props JOIN dud.fps using (zinc_id)
- WHERE (SELECT COUNT(*) FROM decoys) <= {num}
-   AND ABS (mw - {mw}) <= 35.0
+ WHERE ABS (mw - {mw}) <= 35.0
    AND ABS (mw - {mw}) > 20.0
    AND ABS (logp - {logp}) <= 0.8
    AND ABS (rotb - {rotb}) in (0, 1, 2)
@@ -126,14 +140,13 @@ SELECT zinc_id, smiles
    AND (NOT EXISTS (SELECT 1 FROM {t_active}_fps WHERE target <> '{target}')
          OR EXISTS (SELECT 1 FROM {t_active}_fps WHERE target <> '{target}'
                        AND tanimoto_sml(fp,mfp2) > {x}))
- LIMIT {num}
+ LIMIT {num} - (SELECT COUNT(*) FROM decoys)
 ON CONFLICT (zinc_id) DO NOTHING;
     
 INSERT INTO decoys
 SELECT zinc_id, smiles
   FROM dud.props JOIN dud.fps using (zinc_id)
- WHERE (SELECT COUNT(*) FROM decoys) <= {num}
-   AND ABS (mw - {mw}) <= 50.0
+ WHERE ABS (mw - {mw}) <= 50.0
    AND ABS (mw - {mw}) > 35.0
    AND ABS (logp - {logp}) <= 1.2
    AND ABS (rotb - {rotb}) in (0, 1, 2)
@@ -145,14 +158,13 @@ SELECT zinc_id, smiles
    AND (NOT EXISTS (SELECT 1 FROM {t_active}_fps WHERE target <> '{target}')
          OR EXISTS (SELECT 1 FROM {t_active}_fps WHERE target <> '{target}'
                        AND tanimoto_sml(fp,mfp2) > {x}))
- LIMIT {num}
+ LIMIT {num} - (SELECT COUNT(*) FROM decoys)
 ON CONFLICT (zinc_id) DO NOTHING;
 
 INSERT INTO decoys
 SELECT zinc_id, smiles
   FROM dud.props JOIN dud.fps using (zinc_id)
- WHERE (SELECT COUNT(*) FROM decoys) <= {num}
-   AND ABS (mw - {mw}) <= 65.0
+ WHERE ABS (mw - {mw}) <= 65.0
    AND ABS (mw - {mw}) > 50.0
    AND ABS (logp - {logp}) <= 1.8
    AND ABS (rotb - {rotb}) in (0, 1, 2, 3)
@@ -164,14 +176,13 @@ SELECT zinc_id, smiles
    AND (NOT EXISTS (SELECT 1 FROM {t_active}_fps WHERE target <> '{target}')
          OR EXISTS (SELECT 1 FROM {t_active}_fps WHERE target <> '{target}'
                        AND tanimoto_sml(fp,mfp2) > {x}))
- LIMIT {num}
+ LIMIT {num} - (SELECT COUNT(*) FROM decoys)
 ON CONFLICT (zinc_id) DO NOTHING;
 
 INSERT INTO decoys
 SELECT zinc_id, smiles
   FROM dud.props JOIN dud.fps using (zinc_id)
- WHERE (SELECT COUNT(*) FROM decoys) <= {num}
-   AND ABS (mw - {mw}) <= 80.0
+ WHERE ABS (mw - {mw}) <= 80.0
    AND ABS (mw - {mw}) > 65.0
    AND ABS (logp - {logp}) <= 2.4
    AND ABS (rotb - {rotb}) in (0, 1, 2, 3)
@@ -183,14 +194,13 @@ SELECT zinc_id, smiles
    AND (NOT EXISTS (SELECT 1 FROM {t_active}_fps WHERE target <> '{target}')
          OR EXISTS (SELECT 1 FROM {t_active}_fps WHERE target <> '{target}'
                        AND tanimoto_sml(fp,mfp2) > {x}))
- LIMIT {num}
+ LIMIT {num} - (SELECT COUNT(*) FROM decoys)
 ON CONFLICT (zinc_id) DO NOTHING;
 
 INSERT INTO decoys
 SELECT zinc_id, smiles
   FROM dud.props JOIN dud.fps using (zinc_id)
- WHERE (SELECT COUNT(*) FROM decoys) <= {num}
-   AND ABS (mw - {mw}) <= 100.0
+ WHERE ABS (mw - {mw}) <= 100.0
    AND ABS (mw - {mw}) > 80.0
    AND ABS (logp - {logp}) <= 3.0
    AND ABS (rotb - {rotb}) in (0, 1, 2, 3, 4)
@@ -202,14 +212,13 @@ SELECT zinc_id, smiles
    AND (NOT EXISTS (SELECT 1 FROM {t_active}_fps WHERE target <> '{target}')
          OR EXISTS (SELECT 1 FROM {t_active}_fps WHERE target <> '{target}'
                        AND tanimoto_sml(fp,mfp2) > {x}))
- LIMIT {num}
+ LIMIT {num} - (SELECT COUNT(*) FROM decoys)
 ON CONFLICT (zinc_id) DO NOTHING;
 
 INSERT INTO decoys
 SELECT zinc_id, smiles
   FROM dud.props JOIN dud.fps using (zinc_id)
- WHERE (SELECT COUNT(*) FROM decoys) <= {num}
-   AND ABS (mw - {mw}) <= 125.0
+ WHERE ABS (mw - {mw}) <= 125.0
    AND ABS (mw - {mw}) > 100.0
    AND ABS (logp - {logp}) <= 3.6
    AND ABS (rotb - {rotb}) in (0, 1, 2, 3, 4, 5)
@@ -221,7 +230,7 @@ SELECT zinc_id, smiles
    AND (NOT EXISTS (SELECT 1 FROM {t_active}_fps WHERE target <> '{target}')
          OR EXISTS (SELECT 1 FROM {t_active}_fps WHERE target <> '{target}'
                        AND tanimoto_sml(fp,mfp2) > {x}))
- LIMIT {num}
+ LIMIT {num} - (SELECT COUNT(*) FROM decoys)
 ON CONFLICT (zinc_id) DO NOTHING;
 
 SELECT smiles, zinc_id FROM decoys LIMIT {num};
@@ -315,7 +324,7 @@ def generate_decoys(kwargs):
     _decoys = _cursor.fetchall()
     _connect.commit()
     _connect.close()
-    # print("Time for query {} decoys for 1 active: {}".format(len(_decoys), dt.now() - _t))
+    print("Time for query {} decoys for 1 active: {}".format(len(_decoys), dt.now() - _t))
     return _decoys
 
 
@@ -340,7 +349,7 @@ for i, target in enumerate(targets):
         job_kwargs.append({
             'target': target,
             't_active': active_table_name,
-            'num': 750,
+            'num': args.N,
             'mw': mw,
             'logp': logp,
             'rotb': rotb,
@@ -356,7 +365,9 @@ for i, target in enumerate(targets):
         N, target))
     for decoys in tqdm(pool.imap_unordered(generate_decoys, job_kwargs),
                        total=N):
-        for smiles, name in random.sample(decoys, min(50, len(decoys))):
+        if len(decoys) > args.n:
+            decoys = random.sample(decoys, args.n)
+        for smiles, name in decoys:
             f.write('{} {}\n'.format(smiles, name))
     pool.close()
     f.close()

@@ -34,7 +34,14 @@ parser.add_argument(
     default=0,
     type=float,
     help=
-    "max similar (tc, 0-1) between actives and decoys agaist different targets, default 0.0"
+    "min similar (tc, 0-1) between actives and decoys agaist different targets, default 0.0"
+)
+parser.add_argument(
+    "-X",
+    default=1,
+    type=float,
+    help=
+    "max similar (tc, 0-1) between decoys and decoys agaist different targets, default 1"
 )
 parser.add_argument(
     "-n",
@@ -103,12 +110,14 @@ decoys_query = """
 DROP TABLE IF EXISTS decoys;
 CREATE TEMP TABLE decoys (
     zinc_id integer PRIMARY KEY,
-    smiles text);
+    smiles text,
+    fp bfp,
+    target text);
 
 set rdkit.tanimoto_threshold={tc};
 
 INSERT INTO decoys
-SELECT zinc_id, smiles
+SELECT zinc_id, smiles, mfp2, '{target}'
   FROM dud.props JOIN dud.fps using (zinc_id)
  WHERE ABS (mw - {mw}) <= 20.0
    AND ABS (logp - {logp}) <= 0.4
@@ -116,17 +125,20 @@ SELECT zinc_id, smiles
    AND hbd = {hbd}
    AND hba = {hba}
    AND q = {q}
-   AND NOT EXISTS (SELECT 1 FROM {t_active}_fps
+   AND NOT EXISTS (SELECT 1 FROM {job}_d_fps AS D
+                     WHERE D.zid = zinc_id
+                        OR tanimoto_sml(D.fp,mfp2) > {X})
+   AND NOT EXISTS (SELECT 1 FROM {job}_a_fps
                     WHERE fp%mfp2 AND target = '{target}')
-   AND (NOT EXISTS (SELECT 1 FROM {t_active}_fps WHERE target <> '{target}')
-         OR EXISTS (SELECT 1 FROM {t_active}_fps WHERE target <> '{target}'
+   AND (NOT EXISTS (SELECT 1 FROM {job}_a_fps WHERE target <> '{target}')
+         OR EXISTS (SELECT 1 FROM {job}_a_fps WHERE target <> '{target}'
                        AND tanimoto_sml(fp,mfp2) > {x}))
-    --   OR EXISTS (SELECT 1 FROM {t_active}_fps WHERE target <> '{target}' AND fp%mfp2))
+    --   OR EXISTS (SELECT 1 FROM {job}_a_fps WHERE target <> '{target}' AND fp%mfp2))
  LIMIT {num} - (SELECT COUNT(*) FROM decoys)
 ON CONFLICT (zinc_id) DO NOTHING;
 
 INSERT INTO decoys
-SELECT zinc_id, smiles
+SELECT zinc_id, smiles, mfp2, '{target}'
   FROM dud.props JOIN dud.fps using (zinc_id)
  WHERE ABS (mw - {mw}) <= 35.0
    AND ABS (mw - {mw}) > 20.0
@@ -135,16 +147,19 @@ SELECT zinc_id, smiles
    AND hbd = {hbd}
    AND ABS (hba - {hba}) in  (0, 1)
    AND q = {q}
-   AND NOT EXISTS (SELECT 1 FROM {t_active}_fps
+   AND NOT EXISTS (SELECT 1 FROM {job}_d_fps AS D
+                     WHERE D.zid = zinc_id
+                        OR tanimoto_sml(D.fp,mfp2) > {X})
+   AND NOT EXISTS (SELECT 1 FROM {job}_a_fps
                     WHERE fp%mfp2 AND target = '{target}')
-   AND (NOT EXISTS (SELECT 1 FROM {t_active}_fps WHERE target <> '{target}')
-         OR EXISTS (SELECT 1 FROM {t_active}_fps WHERE target <> '{target}'
+   AND (NOT EXISTS (SELECT 1 FROM {job}_a_fps WHERE target <> '{target}')
+         OR EXISTS (SELECT 1 FROM {job}_a_fps WHERE target <> '{target}'
                        AND tanimoto_sml(fp,mfp2) > {x}))
  LIMIT {num} - (SELECT COUNT(*) FROM decoys)
 ON CONFLICT (zinc_id) DO NOTHING;
     
 INSERT INTO decoys
-SELECT zinc_id, smiles
+SELECT zinc_id, smiles, mfp2, '{target}'
   FROM dud.props JOIN dud.fps using (zinc_id)
  WHERE ABS (mw - {mw}) <= 50.0
    AND ABS (mw - {mw}) > 35.0
@@ -153,16 +168,19 @@ SELECT zinc_id, smiles
    AND ABS (hbd - {hbd}) in (0, 1)
    AND ABS (hba - {hba}) in (0, 1, 2)
    AND q = {q}
-   AND NOT EXISTS (SELECT 1 FROM {t_active}_fps
+   AND NOT EXISTS (SELECT 1 FROM {job}_d_fps AS D
+                     WHERE D.zid = zinc_id
+                        OR tanimoto_sml(D.fp,mfp2) > {X})
+   AND NOT EXISTS (SELECT 1 FROM {job}_a_fps
                     WHERE fp%mfp2 AND target = '{target}')
-   AND (NOT EXISTS (SELECT 1 FROM {t_active}_fps WHERE target <> '{target}')
-         OR EXISTS (SELECT 1 FROM {t_active}_fps WHERE target <> '{target}'
+   AND (NOT EXISTS (SELECT 1 FROM {job}_a_fps WHERE target <> '{target}')
+         OR EXISTS (SELECT 1 FROM {job}_a_fps WHERE target <> '{target}'
                        AND tanimoto_sml(fp,mfp2) > {x}))
  LIMIT {num} - (SELECT COUNT(*) FROM decoys)
 ON CONFLICT (zinc_id) DO NOTHING;
 
 INSERT INTO decoys
-SELECT zinc_id, smiles
+SELECT zinc_id, smiles, mfp2, '{target}'
   FROM dud.props JOIN dud.fps using (zinc_id)
  WHERE ABS (mw - {mw}) <= 65.0
    AND ABS (mw - {mw}) > 50.0
@@ -171,16 +189,19 @@ SELECT zinc_id, smiles
    AND ABS (hbd - {hbd}) in (0, 1)
    AND ABS (hba - {hba}) in (0, 1, 2)
    AND q = {q}
-   AND NOT EXISTS (SELECT 1 FROM {t_active}_fps
+   AND NOT EXISTS (SELECT 1 FROM {job}_d_fps AS D
+                     WHERE D.zid = zinc_id
+                        OR tanimoto_sml(D.fp,mfp2) > {X})
+   AND NOT EXISTS (SELECT 1 FROM {job}_a_fps
                     WHERE fp%mfp2 AND target = '{target}')
-   AND (NOT EXISTS (SELECT 1 FROM {t_active}_fps WHERE target <> '{target}')
-         OR EXISTS (SELECT 1 FROM {t_active}_fps WHERE target <> '{target}'
+   AND (NOT EXISTS (SELECT 1 FROM {job}_a_fps WHERE target <> '{target}')
+         OR EXISTS (SELECT 1 FROM {job}_a_fps WHERE target <> '{target}'
                        AND tanimoto_sml(fp,mfp2) > {x}))
  LIMIT {num} - (SELECT COUNT(*) FROM decoys)
 ON CONFLICT (zinc_id) DO NOTHING;
 
 INSERT INTO decoys
-SELECT zinc_id, smiles
+SELECT zinc_id, smiles, mfp2, '{target}'
   FROM dud.props JOIN dud.fps using (zinc_id)
  WHERE ABS (mw - {mw}) <= 80.0
    AND ABS (mw - {mw}) > 65.0
@@ -189,16 +210,19 @@ SELECT zinc_id, smiles
    AND ABS (hbd - {hbd}) in (0, 1, 2)
    AND ABS (hba - {hba}) in (0, 1, 2, 3)
    AND q = {q}
-   AND NOT EXISTS (SELECT 1 FROM {t_active}_fps
+   AND NOT EXISTS (SELECT 1 FROM {job}_d_fps AS D
+                     WHERE D.zid = zinc_id
+                        OR tanimoto_sml(D.fp,mfp2) > {X})
+   AND NOT EXISTS (SELECT 1 FROM {job}_a_fps
                     WHERE fp%mfp2 AND target = '{target}')
-   AND (NOT EXISTS (SELECT 1 FROM {t_active}_fps WHERE target <> '{target}')
-         OR EXISTS (SELECT 1 FROM {t_active}_fps WHERE target <> '{target}'
+   AND (NOT EXISTS (SELECT 1 FROM {job}_a_fps WHERE target <> '{target}')
+         OR EXISTS (SELECT 1 FROM {job}_a_fps WHERE target <> '{target}'
                        AND tanimoto_sml(fp,mfp2) > {x}))
  LIMIT {num} - (SELECT COUNT(*) FROM decoys)
 ON CONFLICT (zinc_id) DO NOTHING;
 
 INSERT INTO decoys
-SELECT zinc_id, smiles
+SELECT zinc_id, smiles, mfp2, '{target}'
   FROM dud.props JOIN dud.fps using (zinc_id)
  WHERE ABS (mw - {mw}) <= 100.0
    AND ABS (mw - {mw}) > 80.0
@@ -207,16 +231,19 @@ SELECT zinc_id, smiles
    AND ABS (hbd - {hbd}) in (0, 1, 2)
    AND ABS (hba - {hba}) in (0, 1, 2, 3)
    AND ABS (q - {q}) in (0, 1)
-   AND NOT EXISTS (SELECT 1 FROM {t_active}_fps
+   AND NOT EXISTS (SELECT 1 FROM {job}_d_fps AS D
+                     WHERE D.zid = zinc_id
+                        OR tanimoto_sml(D.fp,mfp2) > {X})
+   AND NOT EXISTS (SELECT 1 FROM {job}_a_fps
                     WHERE fp%mfp2 AND target = '{target}')
-   AND (NOT EXISTS (SELECT 1 FROM {t_active}_fps WHERE target <> '{target}')
-         OR EXISTS (SELECT 1 FROM {t_active}_fps WHERE target <> '{target}'
+   AND (NOT EXISTS (SELECT 1 FROM {job}_a_fps WHERE target <> '{target}')
+         OR EXISTS (SELECT 1 FROM {job}_a_fps WHERE target <> '{target}'
                        AND tanimoto_sml(fp,mfp2) > {x}))
  LIMIT {num} - (SELECT COUNT(*) FROM decoys)
 ON CONFLICT (zinc_id) DO NOTHING;
 
 INSERT INTO decoys
-SELECT zinc_id, smiles
+SELECT zinc_id, smiles, mfp2, '{target}'
   FROM dud.props JOIN dud.fps using (zinc_id)
  WHERE ABS (mw - {mw}) <= 125.0
    AND ABS (mw - {mw}) > 100.0
@@ -225,13 +252,26 @@ SELECT zinc_id, smiles
    AND ABS (hbd - {hbd}) in (0, 1, 2, 3)
    AND ABS (hba - {hba}) in (0, 1, 2, 3, 4)
    AND ABS (q - {q}) in (0, 1, 2)
-   AND NOT EXISTS (SELECT 1 FROM {t_active}_fps
+   AND NOT EXISTS (SELECT 1 FROM {job}_d_fps AS D
+                     WHERE D.zid = zinc_id
+                        OR tanimoto_sml(D.fp,mfp2) > {X})
+   AND NOT EXISTS (SELECT 1 FROM {job}_a_fps
                     WHERE fp%mfp2 AND target = '{target}')
-   AND (NOT EXISTS (SELECT 1 FROM {t_active}_fps WHERE target <> '{target}')
-         OR EXISTS (SELECT 1 FROM {t_active}_fps WHERE target <> '{target}'
+   AND (NOT EXISTS (SELECT 1 FROM {job}_a_fps WHERE target <> '{target}')
+         OR EXISTS (SELECT 1 FROM {job}_a_fps WHERE target <> '{target}'
                        AND tanimoto_sml(fp,mfp2) > {x}))
  LIMIT {num} - (SELECT COUNT(*) FROM decoys)
 ON CONFLICT (zinc_id) DO NOTHING;
+
+INSERT INTO {job}_d_fps
+SELECT zinc_id, fp, target
+  FROM decoys
+  LIMIT {num}
+ON CONFLICT (zid) DO NOTHING;
+
+-- SELECT smiles, zinc_id, mw, logp, rotb, hbd, hba, q
+--   FROM decoys JOIN dud.props using (zinc_id)
+--  LIMIT {num};
 
 SELECT smiles, zinc_id FROM decoys LIMIT {num};
 
@@ -266,29 +306,42 @@ for a_file in args.actives:
 connect = psycopg2.connect(host=args.host, dbname=args.dbname, port=args.port)
 cursor = connect.cursor()
 
-active_table_name = 'active' + str(
+job_name = 'job' + str(
     abs(hash(''.join(args.actives) + str(dt.now()))))
 # init tables for saving actives
 init_actives = """
-    DROP TABLE IF EXISTS {t_active}_fps;
-    DROP TABLE IF EXISTS {t_active};
-    CREATE TABLE {t_active} (
+    CREATE INDEX IF NOT EXISTS prop_idx ON dud.props (mw, logp, rotb, hba, hbd, q);
+
+    DROP TABLE IF EXISTS {job}_a_fps;
+    DROP TABLE IF EXISTS {job}_a;
+    DROP TABLE IF EXISTS {job}_d_fps;
+
+    CREATE TABLE {job}_a (
         name text,
         smiles text,
         target text);
-    CREATE TABLE {t_active}_fps (
+    CREATE TABLE {job}_a_fps (
         name text,
         fp bfp,
         target text);
-    """.format(t_active=active_table_name)
+    CREATE TABLE {job}_d_fps (
+        zid int PRIMARY KEY,
+        fp bfp,
+        target text);
+
+    CREATE INDEX IF NOT EXISTS dfps_idx ON {job}_d_fps USING gist(fp);
+    CREATE INDEX IF NOT EXISTS afps_idx ON {job}_a_fps USING gist(fp);
+    CREATE INDEX IF NOT EXISTS d_target_idx ON {job}_d_fps (target);
+    CREATE INDEX IF NOT EXISTS a_target_idx ON {job}_a_fps (target);
+    """.format(job=job_name)
 cursor.execute(init_actives)
-# connect.commit()
+connect.commit()
 
 # generate fps into table actives_fps
 for i, target in enumerate(targets):
     # props: mol_id, smiles, mw, logp, rotb, hbd, hba, q
-    insert_query = 'INSERT INTO {t_active} VALUES %s'.format(
-        t_active=active_table_name)
+    insert_query = 'INSERT INTO {job}_a VALUES %s'.format(
+        job=job_name)
     actives_values = [(p[0], p[1], target) for p in actives_props[i]]
     psycopg2.extras.execute_values(cursor,
                                    insert_query,
@@ -296,23 +349,11 @@ for i, target in enumerate(targets):
                                    template=None,
                                    page_size=100)
     cursor.execute("""
-        INSERT INTO {t_active}_fps
+        INSERT INTO {job}_a_fps
         SELECT name, morganbv_fp(mol_from_smiles(smiles::cstring)) as fp, target
-        FROM {t_active};
-        """.format(t_active=active_table_name))
-    # connect.commit()
-
-t_idx = dt.now()
-create_index = """
-CREATE INDEX IF NOT EXISTS afps_idx ON {t_active}_fps USING gist(fp);
-CREATE INDEX IF NOT EXISTS target_idx ON {t_active}_fps (target);
-CREATE INDEX IF NOT EXISTS prop_idx ON dud.props (mw, logp, rotb, hba, hbd, q);
-""".format(t_active=active_table_name)
-# CREATE INDEX IF NOT EXISTS actives_fps_idx ON actives_fps USING gist(fp);
-cursor.execute(create_index)
-connect.commit()
-print("Time for create index: {}".format(dt.now() - t_idx))
-
+        FROM {job}_a;
+        """.format(job=job_name))
+    connect.commit()
 
 def generate_decoys(kwargs):
     _t = dt.now()
@@ -348,7 +389,7 @@ for i, target in enumerate(targets):
         mol_id, smiles, mw, logp, rotb, hbd, hba, q = p
         job_kwargs.append({
             'target': target,
-            't_active': active_table_name,
+            'job': job_name,
             'num': args.N,
             'mw': mw,
             'logp': logp,
@@ -358,6 +399,7 @@ for i, target in enumerate(targets):
             'q': q,
             'tc': args.tc,
             'x': args.x,
+            'X': args.X,
         })
     pool = Pool()
     N = len(job_kwargs)
@@ -373,9 +415,10 @@ for i, target in enumerate(targets):
     f.close()
 
 rm_actives = """
-    DROP TABLE IF EXISTS {t_active}_fps;
-    DROP TABLE IF EXISTS {t_active};
-    """.format(t_active=active_table_name)
+    DROP TABLE IF EXISTS {job}_a_fps;
+    DROP TABLE IF EXISTS {job}_d_fps;
+    DROP TABLE IF EXISTS {job}_a;
+    """.format(job=job_name)
 cursor.execute(rm_actives)
 connect.commit()
 connect.close()

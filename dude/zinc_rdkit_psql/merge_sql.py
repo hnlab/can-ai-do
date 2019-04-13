@@ -8,6 +8,11 @@ from pathlib import Path
 from datetime import datetime as dt
 
 import psycopg2
+import psycopg2.extras
+psycopg2.extensions.set_wait_callback(psycopg2.extras.wait_select)
+
+from tqdm import tqdm
+from multiprocessing import Pool
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("-s", "--sql", nargs='+', required=True)
@@ -62,25 +67,37 @@ cursor.execute(init_dud)
 connect.commit()
 # load smiles and props into temp database
 # using zinc_id as primary key, do nothing when same zinc_id.
-for i, sql_file in enumerate(args.sql):
+def insert_sql(sql_file):
+    raw_name = 'raw' + str(abs(hash(sql_file)))
     sql_file = Path(sql_file).absolute()
-    restore_sql = 'gunzip < {} | psql -p {} {}'.format(sql_file, args.port,
-                                                       args.dbname)
+    restore_sql = "gunzip < {gz} |sed 's/raw/{raw}/g' | psql -p {p} {db} > /dev/null".format(
+            gz=sql_file, p=args.port, db=args.dbname, raw=raw_name)
     subprocess.check_call(restore_sql, shell=True)
+    connect = psycopg2.connect(host=args.host, dbname=args.dbname, port=args.port)
+    cursor = connect.cursor()
     insert_query = """
-    INSERT INTO dud.props (SELECT * FROM raw.props)
+    INSERT INTO dud.props (SELECT * FROM {raw}.props)
         ON CONFLICT (zinc_id) DO NOTHING;
-    INSERT INTO dud.fps (SELECT * FROM raw.fps)
+    INSERT INTO dud.fps (SELECT * FROM {raw}.fps)
         ON CONFLICT (zinc_id) DO NOTHING;
-    INSERT INTO dud.mols (SELECT * FROM raw.mols)
+    INSERT INTO dud.mols (SELECT * FROM {raw}.mols)
         ON CONFLICT (zinc_id) DO NOTHING;
-    DROP TABLE raw.fps, raw.mols, raw.props;
-    DROP SCHEMA raw;
-    """
+    DROP TABLE {raw}.fps, {raw}.mols, {raw}.props;
+    DROP SCHEMA {raw};
+    """.format(raw=raw_name)
     cursor.execute(insert_query)
     connect.commit()
-    print("{}: Loading {:4d}/{} {}".format(dt.now() - start, i, len(args.sql),
-                                           sql_file))
+    connect.close()
+
+pool = Pool()
+N = len(args.sql)
+for _ in tqdm(pool.imap_unordered(insert_sql, args.sql), total=N):
+    pass
+pool.close()
+
+# N = len(args.sql)
+# for i in tqdm(map(insert_sql, args.sql), total=N):
+#     pass
 
 create_indexes = """
 CREATE INDEX IF NOT EXISTS fps_mfp2_idx ON dud.fps USING gist(mfp2);

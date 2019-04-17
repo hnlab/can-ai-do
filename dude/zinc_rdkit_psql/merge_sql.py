@@ -46,7 +46,7 @@ init_dud = """
     CREATE EXTENSION IF NOT EXISTS rdkit WITH SCHEMA public;
     CREATE SCHEMA IF NOT EXISTS dud;
     CREATE TABLE IF NOT EXISTS dud.props (
-        zinc_id integer PRIMARY KEY,
+        zinc_id integer,
         smiles text,
         mw real,
         logp real,
@@ -55,10 +55,10 @@ init_dud = """
         hba smallint,
         q smallint);
     CREATE TABLE IF NOT EXISTS dud.fps (
-        zinc_id integer PRIMARY KEY,
+        zinc_id integer,
         mfp2 bfp);
     CREATE TABLE IF NOT EXISTS dud.mols (
-        zinc_id integer PRIMARY KEY,
+        zinc_id integer,
         m mol);
     DROP TABLE IF EXISTS raw.fps, raw.mols, raw.props;
     DROP SCHEMA IF EXISTS raw;
@@ -76,12 +76,9 @@ def insert_sql(sql_file):
     connect = psycopg2.connect(host=args.host, dbname=args.dbname, port=args.port)
     cursor = connect.cursor()
     insert_query = """
-    INSERT INTO dud.props (SELECT * FROM {raw}.props)
-        ON CONFLICT (zinc_id) DO NOTHING;
-    INSERT INTO dud.fps (SELECT * FROM {raw}.fps)
-        ON CONFLICT (zinc_id) DO NOTHING;
-    INSERT INTO dud.mols (SELECT * FROM {raw}.mols)
-        ON CONFLICT (zinc_id) DO NOTHING;
+    INSERT INTO dud.props (SELECT * FROM {raw}.props);
+    INSERT INTO dud.fps (SELECT * FROM {raw}.fps);
+    INSERT INTO dud.mols (SELECT * FROM {raw}.mols);
     DROP TABLE {raw}.fps, {raw}.mols, {raw}.props;
     DROP SCHEMA {raw};
     """.format(raw=raw_name)

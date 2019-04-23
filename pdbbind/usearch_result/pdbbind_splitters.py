@@ -130,10 +130,18 @@ class ButinaSplitter(Splitter):
         from pathlib import Path
         if pdbbind_path is not None:
             pdbbind_path = Path(pdbbind_path)
+
+        # Morgan Fingerprint need sanitize=True, so use ligand.pdb coverted by babel from ligand.mol2
+        # http://www.rdkit.org/docs/GettingStartedInPython.html#morgan-fingerprints-circular-fingerprints
+
+        # FingerprintMols.FingerprintMol is RDKFingerprint, not error when sanitize=False, but the cluster results are very different to Morgan Fingerprint.
+        # http://www.rdkit.org/docs/GettingStartedInPython.html#topological-fingerprints
         for ind, _id in enumerate(dataset.ids):
             if pdbbind_path:
                 pdb = pdbbind_path / _id / (_id + '_ligand.pdb')
                 mol = Chem.MolFromPDBFile(str(pdb))
+                # sdf = pdbbind_path / _id / (_id + '_ligand.sdf')
+                # mol = next(Chem.SDMolSupplier(str(sdf), sanitize=False))
             else:
                 mol = Chem.MolFromSmiles(_id)
             if mol is None:
@@ -146,6 +154,9 @@ class ButinaSplitter(Splitter):
         n_mols = len(mols)
         from rdkit.Chem import AllChem
         fps = [AllChem.GetMorganFingerprintAsBitVect(x, 2, 1024) for x in mols]
+
+        # from rdkit.Chem.Fingerprints import FingerprintMols
+        # fps = [FingerprintMols.FingerprintMol(x) for x in mols]
 
         scaffold_sets = ClusterFps(fps, cutoff=cutoff)
         scaffold_sets = sorted(scaffold_sets, key=lambda x: -len(x))
@@ -208,7 +219,7 @@ if __name__ == '__main__':
         dataset, cutoff=0.2, pdbbind_path=args.pdbbind_path)
     # print(train.ids)
     # print(valid.ids)
-    # print(test.ids)
+    # print(sorted(test.ids))
     lens = (len(train), len(valid), len(test))
     print("Total:{} train/valid/test: {} {} {}, sum:{}\n".format(
         len(dataset), *lens, sum(lens)))

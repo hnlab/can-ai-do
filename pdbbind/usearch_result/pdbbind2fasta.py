@@ -34,21 +34,15 @@ def SeqFromPDBCode(code):
         pocket = parser.get_structure(code, pocket_pdb)
         protein = parser.get_structure(code, protein_pdb)
     except:
-        return None
-    longest_chain = None
-    for chain in pocket.get_chains():
-        if chain.id == ' ': continue
-        if longest_chain is None or len(chain) > len(longest_chain):
-            longest_chain = chain
-    if longest_chain is None:
+        print('fail to read {}'.format(code))
         return None
     ppb = PDB.PPBuilder()
+    seqs = []
     for chain in protein.get_chains():
-        if chain.id == longest_chain.id:
-            seqs = [i.get_sequence() for i in ppb.build_peptides(chain)]
-            seq_str = ''.join([str(i) for i in seqs])
-            a = seqs[0].alphabet
-            return Seq(seq_str, a)
+        seqs.extend([i.get_sequence() for i in ppb.build_peptides(chain)])
+        seq_str = ''.join([str(i) for i in seqs])
+        a = seqs[0].alphabet
+        return Seq(seq_str, a)
 
 def read_index(index_file):
     codes = []

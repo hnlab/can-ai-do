@@ -125,6 +125,7 @@ SELECT zinc_id, smiles, mfp2, '{target}'
    AND hbd = {hbd}
    AND hba = {hba}
    AND q = {q}
+   AND NOT mfp2 % morganbv_fp(mol_from_smiles('{smiles}'::cstring))
    AND NOT EXISTS (SELECT 1 FROM {job}_d_fps AS D
                      WHERE D.zid = zinc_id
                         OR tanimoto_sml(D.fp,mfp2) > {X})
@@ -147,6 +148,7 @@ SELECT zinc_id, smiles, mfp2, '{target}'
    AND hbd = {hbd}
    AND ABS (hba - {hba}) in  (0, 1)
    AND q = {q}
+   AND NOT mfp2 % morganbv_fp(mol_from_smiles('{smiles}'::cstring))
    AND NOT EXISTS (SELECT 1 FROM {job}_d_fps AS D
                      WHERE D.zid = zinc_id
                         OR tanimoto_sml(D.fp,mfp2) > {X})
@@ -168,6 +170,7 @@ SELECT zinc_id, smiles, mfp2, '{target}'
    AND ABS (hbd - {hbd}) in (0, 1)
    AND ABS (hba - {hba}) in (0, 1, 2)
    AND q = {q}
+   AND NOT mfp2 % morganbv_fp(mol_from_smiles('{smiles}'::cstring))
    AND NOT EXISTS (SELECT 1 FROM {job}_d_fps AS D
                      WHERE D.zid = zinc_id
                         OR tanimoto_sml(D.fp,mfp2) > {X})
@@ -189,6 +192,7 @@ SELECT zinc_id, smiles, mfp2, '{target}'
    AND ABS (hbd - {hbd}) in (0, 1)
    AND ABS (hba - {hba}) in (0, 1, 2)
    AND q = {q}
+   AND NOT mfp2 % morganbv_fp(mol_from_smiles('{smiles}'::cstring))
    AND NOT EXISTS (SELECT 1 FROM {job}_d_fps AS D
                      WHERE D.zid = zinc_id
                         OR tanimoto_sml(D.fp,mfp2) > {X})
@@ -210,6 +214,7 @@ SELECT zinc_id, smiles, mfp2, '{target}'
    AND ABS (hbd - {hbd}) in (0, 1, 2)
    AND ABS (hba - {hba}) in (0, 1, 2, 3)
    AND q = {q}
+   AND NOT mfp2 % morganbv_fp(mol_from_smiles('{smiles}'::cstring))
    AND NOT EXISTS (SELECT 1 FROM {job}_d_fps AS D
                      WHERE D.zid = zinc_id
                         OR tanimoto_sml(D.fp,mfp2) > {X})
@@ -231,6 +236,7 @@ SELECT zinc_id, smiles, mfp2, '{target}'
    AND ABS (hbd - {hbd}) in (0, 1, 2)
    AND ABS (hba - {hba}) in (0, 1, 2, 3)
    AND ABS (q - {q}) in (0, 1)
+   AND NOT mfp2 % morganbv_fp(mol_from_smiles('{smiles}'::cstring))
    AND NOT EXISTS (SELECT 1 FROM {job}_d_fps AS D
                      WHERE D.zid = zinc_id
                         OR tanimoto_sml(D.fp,mfp2) > {X})
@@ -252,6 +258,7 @@ SELECT zinc_id, smiles, mfp2, '{target}'
    AND ABS (hbd - {hbd}) in (0, 1, 2, 3)
    AND ABS (hba - {hba}) in (0, 1, 2, 3, 4)
    AND ABS (q - {q}) in (0, 1, 2)
+   AND NOT mfp2 % morganbv_fp(mol_from_smiles('{smiles}'::cstring))
    AND NOT EXISTS (SELECT 1 FROM {job}_d_fps AS D
                      WHERE D.zid = zinc_id
                         OR tanimoto_sml(D.fp,mfp2) > {X})
@@ -400,6 +407,7 @@ for i, target in enumerate(targets):
             'tc': args.tc,
             'x': args.x,
             'X': args.X,
+            'smiles':smiles,
         })
     pool = Pool()
     N = len(job_kwargs)

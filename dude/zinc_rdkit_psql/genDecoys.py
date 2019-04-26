@@ -114,33 +114,28 @@ CREATE TEMP TABLE decoys (
     fp bfp,
     target text);
 
-set rdkit.tanimoto_threshold={tc};
+set rdkit.tanimoto_threshold={x};
 
 INSERT INTO decoys
-SELECT zinc_id, smiles, mfp2, '{target}'
-  FROM dud.props JOIN dud.fps using (zinc_id)
+SELECT db.zinc_id, db.smiles, db.mfp2, '{target}'
+  FROM (dud.props JOIN dud.fps using (zinc_id)) db
+ CROSS JOIN (SELECT * FROM {job}_a_fps WHERE target <> '{target}') other
  WHERE ABS (mw - {mw}) <= 20.0
    AND ABS (logp - {logp}) <= 0.4
    AND ABS (rotb - {rotb}) in (0, 1)
    AND hbd = {hbd}
    AND hba = {hba}
    AND q = {q}
-   AND NOT mfp2 % morganbv_fp(mol_from_smiles('{smiles}'::cstring))
-   AND NOT EXISTS (SELECT 1 FROM {job}_d_fps AS D
-                     WHERE D.zid = zinc_id
-                        OR tanimoto_sml(D.fp,mfp2) > {X})
+   AND db.mfp2 % other.fp
    AND NOT EXISTS (SELECT 1 FROM {job}_a_fps
-                    WHERE fp%mfp2 AND target = '{target}')
-   AND (NOT EXISTS (SELECT 1 FROM {job}_a_fps WHERE target <> '{target}')
-         OR EXISTS (SELECT 1 FROM {job}_a_fps WHERE target <> '{target}'
-                       AND tanimoto_sml(fp,mfp2) > {x}))
-    --   OR EXISTS (SELECT 1 FROM {job}_a_fps WHERE target <> '{target}' AND fp%mfp2))
+                    WHERE tanimoto_sml(fp, mfp2) > {tc} AND target = '{target}')
  LIMIT {num} - (SELECT COUNT(*) FROM decoys)
 ON CONFLICT (zinc_id) DO NOTHING;
 
 INSERT INTO decoys
-SELECT zinc_id, smiles, mfp2, '{target}'
-  FROM dud.props JOIN dud.fps using (zinc_id)
+SELECT db.zinc_id, db.smiles, db.mfp2, '{target}'
+  FROM (dud.props JOIN dud.fps using (zinc_id)) db
+ CROSS JOIN (SELECT * FROM {job}_a_fps WHERE target <> '{target}') other
  WHERE ABS (mw - {mw}) <= 35.0
    AND ABS (mw - {mw}) > 20.0
    AND ABS (logp - {logp}) <= 0.8
@@ -148,21 +143,16 @@ SELECT zinc_id, smiles, mfp2, '{target}'
    AND hbd = {hbd}
    AND ABS (hba - {hba}) in  (0, 1)
    AND q = {q}
-   AND NOT mfp2 % morganbv_fp(mol_from_smiles('{smiles}'::cstring))
-   AND NOT EXISTS (SELECT 1 FROM {job}_d_fps AS D
-                     WHERE D.zid = zinc_id
-                        OR tanimoto_sml(D.fp,mfp2) > {X})
+   AND db.mfp2 % other.fp
    AND NOT EXISTS (SELECT 1 FROM {job}_a_fps
-                    WHERE fp%mfp2 AND target = '{target}')
-   AND (NOT EXISTS (SELECT 1 FROM {job}_a_fps WHERE target <> '{target}')
-         OR EXISTS (SELECT 1 FROM {job}_a_fps WHERE target <> '{target}'
-                       AND tanimoto_sml(fp,mfp2) > {x}))
+                    WHERE tanimoto_sml(fp, mfp2) > {tc} AND target = '{target}')
  LIMIT {num} - (SELECT COUNT(*) FROM decoys)
 ON CONFLICT (zinc_id) DO NOTHING;
     
 INSERT INTO decoys
-SELECT zinc_id, smiles, mfp2, '{target}'
-  FROM dud.props JOIN dud.fps using (zinc_id)
+SELECT db.zinc_id, db.smiles, db.mfp2, '{target}'
+  FROM (dud.props JOIN dud.fps using (zinc_id)) db
+ CROSS JOIN (SELECT * FROM {job}_a_fps WHERE target <> '{target}') other
  WHERE ABS (mw - {mw}) <= 50.0
    AND ABS (mw - {mw}) > 35.0
    AND ABS (logp - {logp}) <= 1.2
@@ -170,21 +160,16 @@ SELECT zinc_id, smiles, mfp2, '{target}'
    AND ABS (hbd - {hbd}) in (0, 1)
    AND ABS (hba - {hba}) in (0, 1, 2)
    AND q = {q}
-   AND NOT mfp2 % morganbv_fp(mol_from_smiles('{smiles}'::cstring))
-   AND NOT EXISTS (SELECT 1 FROM {job}_d_fps AS D
-                     WHERE D.zid = zinc_id
-                        OR tanimoto_sml(D.fp,mfp2) > {X})
+   AND db.mfp2 % other.fp
    AND NOT EXISTS (SELECT 1 FROM {job}_a_fps
-                    WHERE fp%mfp2 AND target = '{target}')
-   AND (NOT EXISTS (SELECT 1 FROM {job}_a_fps WHERE target <> '{target}')
-         OR EXISTS (SELECT 1 FROM {job}_a_fps WHERE target <> '{target}'
-                       AND tanimoto_sml(fp,mfp2) > {x}))
+                    WHERE tanimoto_sml(fp, mfp2) > {tc} AND target = '{target}')
  LIMIT {num} - (SELECT COUNT(*) FROM decoys)
 ON CONFLICT (zinc_id) DO NOTHING;
 
 INSERT INTO decoys
-SELECT zinc_id, smiles, mfp2, '{target}'
-  FROM dud.props JOIN dud.fps using (zinc_id)
+SELECT db.zinc_id, db.smiles, db.mfp2, '{target}'
+  FROM (dud.props JOIN dud.fps using (zinc_id)) db
+ CROSS JOIN (SELECT * FROM {job}_a_fps WHERE target <> '{target}') other
  WHERE ABS (mw - {mw}) <= 65.0
    AND ABS (mw - {mw}) > 50.0
    AND ABS (logp - {logp}) <= 1.8
@@ -192,21 +177,16 @@ SELECT zinc_id, smiles, mfp2, '{target}'
    AND ABS (hbd - {hbd}) in (0, 1)
    AND ABS (hba - {hba}) in (0, 1, 2)
    AND q = {q}
-   AND NOT mfp2 % morganbv_fp(mol_from_smiles('{smiles}'::cstring))
-   AND NOT EXISTS (SELECT 1 FROM {job}_d_fps AS D
-                     WHERE D.zid = zinc_id
-                        OR tanimoto_sml(D.fp,mfp2) > {X})
+   AND db.mfp2 % other.fp
    AND NOT EXISTS (SELECT 1 FROM {job}_a_fps
-                    WHERE fp%mfp2 AND target = '{target}')
-   AND (NOT EXISTS (SELECT 1 FROM {job}_a_fps WHERE target <> '{target}')
-         OR EXISTS (SELECT 1 FROM {job}_a_fps WHERE target <> '{target}'
-                       AND tanimoto_sml(fp,mfp2) > {x}))
+                    WHERE tanimoto_sml(fp, mfp2) > {tc} AND target = '{target}')
  LIMIT {num} - (SELECT COUNT(*) FROM decoys)
 ON CONFLICT (zinc_id) DO NOTHING;
 
 INSERT INTO decoys
-SELECT zinc_id, smiles, mfp2, '{target}'
-  FROM dud.props JOIN dud.fps using (zinc_id)
+SELECT db.zinc_id, db.smiles, db.mfp2, '{target}'
+  FROM (dud.props JOIN dud.fps using (zinc_id)) db
+ CROSS JOIN (SELECT * FROM {job}_a_fps WHERE target <> '{target}') other
  WHERE ABS (mw - {mw}) <= 80.0
    AND ABS (mw - {mw}) > 65.0
    AND ABS (logp - {logp}) <= 2.4
@@ -214,21 +194,16 @@ SELECT zinc_id, smiles, mfp2, '{target}'
    AND ABS (hbd - {hbd}) in (0, 1, 2)
    AND ABS (hba - {hba}) in (0, 1, 2, 3)
    AND q = {q}
-   AND NOT mfp2 % morganbv_fp(mol_from_smiles('{smiles}'::cstring))
-   AND NOT EXISTS (SELECT 1 FROM {job}_d_fps AS D
-                     WHERE D.zid = zinc_id
-                        OR tanimoto_sml(D.fp,mfp2) > {X})
+   AND db.mfp2 % other.fp
    AND NOT EXISTS (SELECT 1 FROM {job}_a_fps
-                    WHERE fp%mfp2 AND target = '{target}')
-   AND (NOT EXISTS (SELECT 1 FROM {job}_a_fps WHERE target <> '{target}')
-         OR EXISTS (SELECT 1 FROM {job}_a_fps WHERE target <> '{target}'
-                       AND tanimoto_sml(fp,mfp2) > {x}))
+                    WHERE tanimoto_sml(fp, mfp2) > {tc} AND target = '{target}')
  LIMIT {num} - (SELECT COUNT(*) FROM decoys)
 ON CONFLICT (zinc_id) DO NOTHING;
 
 INSERT INTO decoys
-SELECT zinc_id, smiles, mfp2, '{target}'
-  FROM dud.props JOIN dud.fps using (zinc_id)
+SELECT db.zinc_id, db.smiles, db.mfp2, '{target}'
+  FROM (dud.props JOIN dud.fps using (zinc_id)) db
+ CROSS JOIN (SELECT * FROM {job}_a_fps WHERE target <> '{target}') other
  WHERE ABS (mw - {mw}) <= 100.0
    AND ABS (mw - {mw}) > 80.0
    AND ABS (logp - {logp}) <= 3.0
@@ -236,21 +211,16 @@ SELECT zinc_id, smiles, mfp2, '{target}'
    AND ABS (hbd - {hbd}) in (0, 1, 2)
    AND ABS (hba - {hba}) in (0, 1, 2, 3)
    AND ABS (q - {q}) in (0, 1)
-   AND NOT mfp2 % morganbv_fp(mol_from_smiles('{smiles}'::cstring))
-   AND NOT EXISTS (SELECT 1 FROM {job}_d_fps AS D
-                     WHERE D.zid = zinc_id
-                        OR tanimoto_sml(D.fp,mfp2) > {X})
+   AND db.mfp2 % other.fp
    AND NOT EXISTS (SELECT 1 FROM {job}_a_fps
-                    WHERE fp%mfp2 AND target = '{target}')
-   AND (NOT EXISTS (SELECT 1 FROM {job}_a_fps WHERE target <> '{target}')
-         OR EXISTS (SELECT 1 FROM {job}_a_fps WHERE target <> '{target}'
-                       AND tanimoto_sml(fp,mfp2) > {x}))
+                    WHERE tanimoto_sml(fp, mfp2) > {tc} AND target = '{target}')
  LIMIT {num} - (SELECT COUNT(*) FROM decoys)
 ON CONFLICT (zinc_id) DO NOTHING;
 
 INSERT INTO decoys
-SELECT zinc_id, smiles, mfp2, '{target}'
-  FROM dud.props JOIN dud.fps using (zinc_id)
+SELECT db.zinc_id, db.smiles, db.mfp2, '{target}'
+  FROM (dud.props JOIN dud.fps using (zinc_id)) db
+ CROSS JOIN (SELECT * FROM {job}_a_fps WHERE target <> '{target}') other
  WHERE ABS (mw - {mw}) <= 125.0
    AND ABS (mw - {mw}) > 100.0
    AND ABS (logp - {logp}) <= 3.6
@@ -258,22 +228,16 @@ SELECT zinc_id, smiles, mfp2, '{target}'
    AND ABS (hbd - {hbd}) in (0, 1, 2, 3)
    AND ABS (hba - {hba}) in (0, 1, 2, 3, 4)
    AND ABS (q - {q}) in (0, 1, 2)
-   AND NOT mfp2 % morganbv_fp(mol_from_smiles('{smiles}'::cstring))
-   AND NOT EXISTS (SELECT 1 FROM {job}_d_fps AS D
-                     WHERE D.zid = zinc_id
-                        OR tanimoto_sml(D.fp,mfp2) > {X})
+   AND db.mfp2 % other.fp
    AND NOT EXISTS (SELECT 1 FROM {job}_a_fps
-                    WHERE fp%mfp2 AND target = '{target}')
-   AND (NOT EXISTS (SELECT 1 FROM {job}_a_fps WHERE target <> '{target}')
-         OR EXISTS (SELECT 1 FROM {job}_a_fps WHERE target <> '{target}'
-                       AND tanimoto_sml(fp,mfp2) > {x}))
+                    WHERE tanimoto_sml(fp, mfp2) > {tc} AND target = '{target}')
  LIMIT {num} - (SELECT COUNT(*) FROM decoys)
 ON CONFLICT (zinc_id) DO NOTHING;
 
 INSERT INTO {job}_d_fps
 SELECT zinc_id, fp, target
   FROM decoys
-  LIMIT {num}
+ LIMIT {num}
 ON CONFLICT (zid) DO NOTHING;
 
 -- SELECT smiles, zinc_id, mw, logp, rotb, hbd, hba, q

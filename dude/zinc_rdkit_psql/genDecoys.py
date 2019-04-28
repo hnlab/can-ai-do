@@ -43,13 +43,10 @@ parser.add_argument(
     help=
     "max similar (tc, 0-1) between decoys and decoys agaist different targets, default 1"
 )
-parser.add_argument(
-    "-n",
-    default=50,
-    type=int,
-    help=
-    "n decoys per acive. default 50"
-)
+parser.add_argument("-n",
+                    default=50,
+                    type=int,
+                    help="n decoys per acive. default 50")
 parser.add_argument(
     "-N",
     default=50,
@@ -58,13 +55,16 @@ parser.add_argument(
     "N candidate decoys per acive, random select n decoys from N candidate decoys, N >= n. default: N = n"
 )
 parser.add_argument("-d", "--dbname", required=True)
+parser.add_argument("-s", "--schema", default='dud')
 parser.add_argument("--host", default='localhost')
 parser.add_argument("-p", "--port", default='5432')
+parser.add_argument("-P", "--processes", type=int)
 parser.add_argument("-o", "--output", required=True, help="output dir")
 args = parser.parse_args()
 
 if args.N is None:
     args.N = args.n
+
 
 def getProp(mol_line):
     smiles, mol_id = mol_line.split()[:2]
@@ -117,8 +117,8 @@ CREATE TEMP TABLE decoys (
 set rdkit.tanimoto_threshold={x};
 
 INSERT INTO decoys
-SELECT db.zinc_id, db.smiles, db.mfp2, '{target}'
-  FROM (dud.props JOIN dud.fps using (zinc_id)) db
+SELECT DISTINCT ON (db.zinc_id) db.zinc_id, db.smiles, db.mfp2, '{target}'
+  FROM ({schema}.props JOIN {schema}.fps using (zinc_id)) db
  CROSS JOIN (SELECT * FROM {job}_a_fps WHERE target <> '{target}') other
  WHERE ABS (mw - {mw}) <= 20.0
    AND ABS (logp - {logp}) <= 0.4
@@ -133,8 +133,8 @@ SELECT db.zinc_id, db.smiles, db.mfp2, '{target}'
 ON CONFLICT (zinc_id) DO NOTHING;
 
 INSERT INTO decoys
-SELECT db.zinc_id, db.smiles, db.mfp2, '{target}'
-  FROM (dud.props JOIN dud.fps using (zinc_id)) db
+SELECT DISTINCT ON (db.zinc_id) db.zinc_id, db.smiles, db.mfp2, '{target}'
+  FROM ({schema}.props JOIN {schema}.fps using (zinc_id)) db
  CROSS JOIN (SELECT * FROM {job}_a_fps WHERE target <> '{target}') other
  WHERE ABS (mw - {mw}) <= 35.0
    AND ABS (mw - {mw}) > 20.0
@@ -150,8 +150,8 @@ SELECT db.zinc_id, db.smiles, db.mfp2, '{target}'
 ON CONFLICT (zinc_id) DO NOTHING;
     
 INSERT INTO decoys
-SELECT db.zinc_id, db.smiles, db.mfp2, '{target}'
-  FROM (dud.props JOIN dud.fps using (zinc_id)) db
+SELECT DISTINCT ON (db.zinc_id) db.zinc_id, db.smiles, db.mfp2, '{target}'
+  FROM ({schema}.props JOIN {schema}.fps using (zinc_id)) db
  CROSS JOIN (SELECT * FROM {job}_a_fps WHERE target <> '{target}') other
  WHERE ABS (mw - {mw}) <= 50.0
    AND ABS (mw - {mw}) > 35.0
@@ -167,8 +167,8 @@ SELECT db.zinc_id, db.smiles, db.mfp2, '{target}'
 ON CONFLICT (zinc_id) DO NOTHING;
 
 INSERT INTO decoys
-SELECT db.zinc_id, db.smiles, db.mfp2, '{target}'
-  FROM (dud.props JOIN dud.fps using (zinc_id)) db
+SELECT DISTINCT ON (db.zinc_id) db.zinc_id, db.smiles, db.mfp2, '{target}'
+  FROM ({schema}.props JOIN {schema}.fps using (zinc_id)) db
  CROSS JOIN (SELECT * FROM {job}_a_fps WHERE target <> '{target}') other
  WHERE ABS (mw - {mw}) <= 65.0
    AND ABS (mw - {mw}) > 50.0
@@ -184,8 +184,8 @@ SELECT db.zinc_id, db.smiles, db.mfp2, '{target}'
 ON CONFLICT (zinc_id) DO NOTHING;
 
 INSERT INTO decoys
-SELECT db.zinc_id, db.smiles, db.mfp2, '{target}'
-  FROM (dud.props JOIN dud.fps using (zinc_id)) db
+SELECT DISTINCT ON (db.zinc_id) db.zinc_id, db.smiles, db.mfp2, '{target}'
+  FROM ({schema}.props JOIN {schema}.fps using (zinc_id)) db
  CROSS JOIN (SELECT * FROM {job}_a_fps WHERE target <> '{target}') other
  WHERE ABS (mw - {mw}) <= 80.0
    AND ABS (mw - {mw}) > 65.0
@@ -201,8 +201,8 @@ SELECT db.zinc_id, db.smiles, db.mfp2, '{target}'
 ON CONFLICT (zinc_id) DO NOTHING;
 
 INSERT INTO decoys
-SELECT db.zinc_id, db.smiles, db.mfp2, '{target}'
-  FROM (dud.props JOIN dud.fps using (zinc_id)) db
+SELECT DISTINCT ON (db.zinc_id) db.zinc_id, db.smiles, db.mfp2, '{target}'
+  FROM ({schema}.props JOIN {schema}.fps using (zinc_id)) db
  CROSS JOIN (SELECT * FROM {job}_a_fps WHERE target <> '{target}') other
  WHERE ABS (mw - {mw}) <= 100.0
    AND ABS (mw - {mw}) > 80.0
@@ -218,8 +218,8 @@ SELECT db.zinc_id, db.smiles, db.mfp2, '{target}'
 ON CONFLICT (zinc_id) DO NOTHING;
 
 INSERT INTO decoys
-SELECT db.zinc_id, db.smiles, db.mfp2, '{target}'
-  FROM (dud.props JOIN dud.fps using (zinc_id)) db
+SELECT DISTINCT ON (db.zinc_id) db.zinc_id, db.smiles, db.mfp2, '{target}'
+  FROM ({schema}.props JOIN {schema}.fps using (zinc_id)) db
  CROSS JOIN (SELECT * FROM {job}_a_fps WHERE target <> '{target}') other
  WHERE ABS (mw - {mw}) <= 125.0
    AND ABS (mw - {mw}) > 100.0
@@ -234,14 +234,14 @@ SELECT db.zinc_id, db.smiles, db.mfp2, '{target}'
  LIMIT {num} - (SELECT COUNT(*) FROM decoys)
 ON CONFLICT (zinc_id) DO NOTHING;
 
-INSERT INTO {job}_d_fps
-SELECT zinc_id, fp, target
-  FROM decoys
- LIMIT {num}
-ON CONFLICT (zid) DO NOTHING;
+-- INSERT INTO {job}_d_fps
+-- SELECT zinc_id, fp, target
+--   FROM decoys
+--  LIMIT {num}
+-- ON CONFLICT (zid) DO NOTHING;
 
 -- SELECT smiles, zinc_id, mw, logp, rotb, hbd, hba, q
---   FROM decoys JOIN dud.props using (zinc_id)
+--   FROM decoys JOIN {schema}.props using (zinc_id)
 --  LIMIT {num};
 
 SELECT smiles, zinc_id FROM decoys LIMIT {num};
@@ -277,11 +277,10 @@ for a_file in args.actives:
 connect = psycopg2.connect(host=args.host, dbname=args.dbname, port=args.port)
 cursor = connect.cursor()
 
-job_name = 'job' + str(
-    abs(hash(''.join(args.actives) + str(dt.now()))))
+job_name = 'job' + str(abs(hash(''.join(args.actives) + str(dt.now()))))
 # init tables for saving actives
 init_actives = """
-    CREATE INDEX IF NOT EXISTS prop_idx ON dud.props (mw, logp, rotb, hba, hbd, q);
+    CREATE INDEX IF NOT EXISTS prop_idx ON {schema}.props (mw, logp, rotb, hba, hbd, q);
 
     DROP TABLE IF EXISTS {job}_a_fps;
     DROP TABLE IF EXISTS {job}_a;
@@ -304,15 +303,14 @@ init_actives = """
     CREATE INDEX IF NOT EXISTS afps_idx ON {job}_a_fps USING gist(fp);
     CREATE INDEX IF NOT EXISTS d_target_idx ON {job}_d_fps (target);
     CREATE INDEX IF NOT EXISTS a_target_idx ON {job}_a_fps (target);
-    """.format(job=job_name)
+    """.format(job=job_name, schema=args.schema)
 cursor.execute(init_actives)
 connect.commit()
 
 # generate fps into table actives_fps
 for i, target in enumerate(targets):
     # props: mol_id, smiles, mw, logp, rotb, hbd, hba, q
-    insert_query = 'INSERT INTO {job}_a VALUES %s'.format(
-        job=job_name)
+    insert_query = 'INSERT INTO {job}_a VALUES %s'.format(job=job_name)
     actives_values = [(p[0], p[1], target) for p in actives_props[i]]
     psycopg2.extras.execute_values(cursor,
                                    insert_query,
@@ -326,17 +324,21 @@ for i, target in enumerate(targets):
         """.format(job=job_name))
     connect.commit()
 
+
 def generate_decoys(kwargs):
     _t = dt.now()
     _connect = psycopg2.connect(host=args.host,
                                 dbname=args.dbname,
                                 port=args.port)
     _cursor = _connect.cursor()
+    print(decoys_query.format(**kwargs))
     _cursor.execute(decoys_query.format(**kwargs))
     _decoys = _cursor.fetchall()
     _connect.commit()
     _connect.close()
-    print("Time for query {} decoys for 1 active: {}".format(len(_decoys), dt.now() - _t))
+    print("Time for query {} decoys for 1 active: {}".format(
+        len(_decoys),
+        dt.now() - _t))
     return _decoys
 
 
@@ -371,9 +373,10 @@ for i, target in enumerate(targets):
             'tc': args.tc,
             'x': args.x,
             'X': args.X,
-            'smiles':smiles,
+            'smiles': smiles,
+            'schema': args.schema,
         })
-    pool = Pool()
+    pool = Pool(processes=args.processes)
     N = len(job_kwargs)
     print("generating decoys for {} actives against target {}:".format(
         N, target))

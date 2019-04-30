@@ -331,7 +331,7 @@ def generate_decoys(kwargs):
                                 dbname=args.dbname,
                                 port=args.port)
     _cursor = _connect.cursor()
-    print(decoys_query.format(**kwargs))
+    # print(decoys_query.format(**kwargs))
     _cursor.execute(decoys_query.format(**kwargs))
     _decoys = _cursor.fetchall()
     _connect.commit()

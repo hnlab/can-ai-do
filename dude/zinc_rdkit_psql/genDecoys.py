@@ -120,11 +120,6 @@ CREATE TABLE {job}_a (
     name text,
     smiles text,
     target text);
-CREATE TABLE {job}_a_fps (
-    name text,
-    fp bfp,
-    target text);
-CREATE INDEX IF NOT EXISTS afps_idx ON {job}_a_fps USING gist(fp);
 """.format(job=job_name, schema=args.schema)
 cursor.execute(init_actives)
 connect.commit()
@@ -140,10 +135,14 @@ for i, target in enumerate(targets):
                                    template=None,
                                    page_size=100)
     cursor.execute("""
-        INSERT INTO {job}_a_fps
-        SELECT name, morganbv_fp(mol_from_smiles(smiles::cstring)) as fp, target
-        FROM {job}_a;
-        """.format(job=job_name))
+        SELECT morganbv_fp(mol_from_smiles(smiles::cstring)) as fp
+        INTO {job}_a_fps_{target}
+        FROM {job}_a
+        WHERE target = '{target}';
+
+        CREATE INDEX IF NOT EXISTS afps_idx_{target}
+        ON {job}_a_fps_{target} USING gist(fp);
+        """.format(job=job_name, target=target))
     connect.commit()
 
 ### get a subset mols which are similar to actives with tanimoto threshold.
@@ -208,7 +207,7 @@ SET rdkit.tanimoto_threshold = {simi_float};
 INSERT INTO {schema}.simi{simi}_{target}
 SELECT DISTINCT ON (zinc_id) zinc_id, smiles, mw, logp, rotb, hbd, hba, q
   FROM {schema}.{part} db
- CROSS JOIN (SELECT fp FROM {job}_a_fps WHERE target = '{target}') a
+ CROSS JOIN {job}_a_fps_{target} a
  WHERE a.fp % db.mfp2;
 """
 
@@ -221,8 +220,8 @@ def get_simi(kwargs):
     _t = dt.now()
     # print(get_simi_decoys_query.format(**kwargs))
     _cursor.execute(get_simi_decoys_query.format(**kwargs))
-    print("Time for get simi for {} from {}: {}".format(
-        kwargs['target'], kwargs['part'],
+    print("Time for get simi {} for {:>10s} from {:>8s}: {}".format(
+        kwargs['simi'], kwargs['target'], kwargs['part'],
         dt.now() - _t))
     _connect.commit()
     _connect.close()
@@ -231,10 +230,14 @@ def get_simi(kwargs):
 if OLD_SIMI_TABLES:
     print('\nUsing old simi tables\n')
 N = len(simi_part_kwargs)
+# mix different targets for better tqdm timing.
+simi_part_kwargs = sorted(simi_part_kwargs, key=lambda i: i['part'])
 if N > 0:
     print('get {} more simi tables'.format(N))
     pool = Pool(processes=args.processes)
-    for _ in tqdm(pool.imap_unordered(get_simi, simi_part_kwargs), total=N):
+    for _ in tqdm(pool.imap_unordered(get_simi, simi_part_kwargs),
+                  total=N,
+                  smoothing=0):
         pass
     pool.close()
 
@@ -351,7 +354,8 @@ for i, target in enumerate(targets):
     print("generating decoys for {} actives against target {}:".format(
         N, target))
     for decoys in tqdm(pool.imap_unordered(generate_decoys, job_kwargs),
-                       total=N):
+                       total=N,
+                       smoothing=0):
         if len(decoys) > args.n:
             decoys = random.sample(decoys, args.n)
         for smiles, name in decoys:

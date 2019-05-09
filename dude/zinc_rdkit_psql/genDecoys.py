@@ -200,6 +200,7 @@ for kwargs in simi_kwargs:
         simi_part_kwargs.append(d)
 connect.commit()
 
+
 get_simi_decoys_query = """
 CREATE INDEX IF NOT EXISTS fps_idx_{part} ON {schema}.{part} USING gist(mfp2);
 SET rdkit.tanimoto_threshold = {simi_float};
@@ -240,6 +241,14 @@ if N > 0:
                   smoothing=0):
         pass
     pool.close()
+
+create_index_on_zinc_id = """
+CREATE INDEX IF NOT EXISTS simi{simi}_{target}_pkey
+ON {schema}.simi{simi}_{target} (zinc_id);
+"""
+for kwargs in simi_kwargs:
+    cursor.execute(create_index_on_zinc_id.format(**kwargs))
+connect.commit()
 
 rm_actives = """
     DROP TABLE IF EXISTS {job}_a;
@@ -284,16 +293,18 @@ def generate_decoys(kwargs):
     _cursor = _connect.cursor()
     _cursor.execute("""CREATE TEMP TABLE decoys (
     zinc_id integer PRIMARY KEY,
-    smiles text)""")
+    smiles text);
+    SET enable_seqscan TO OFF;
+    """)
     for level, match in enumerate(MATCH_LEVEL_BLOCK):
         query = 'INSERT INTO decoys\n'
         select_subquerys = []
         for ti in kwargs['targets']:
             if ti == kwargs['target']: continue
             q = ('SELECT zinc_id, smiles\n' +
-                 'FROM {{schema}}.simi{{x}}_{ti}\n'.format(ti=ti) +
-                 'WHERE zinc_id NOT IN (\n' +
-                 '    SELECT zinc_id FROM {schema}.simi{tc}_{target})\n' +
+                 'FROM {{schema}}.simi{{x}}_{ti} other\n'.format(ti=ti) +
+                 'WHERE NOT EXISTS (\n' +
+                 '    SELECT FROM {schema}.simi{tc}_{target} self WHERE self.zinc_id = other.zinc_id)\n'
                  'AND ' + match)
             select_subquerys.append(q)
         query += 'UNION ALL\n'.join(select_subquerys) + '\n'

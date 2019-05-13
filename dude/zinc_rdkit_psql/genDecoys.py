@@ -200,7 +200,6 @@ for kwargs in simi_kwargs:
         simi_part_kwargs.append(d)
 connect.commit()
 
-
 get_simi_decoys_query = """
 CREATE INDEX IF NOT EXISTS fps_idx_{part} ON {schema}.{part} USING gist(mfp2);
 SET rdkit.tanimoto_threshold = {simi_float};
@@ -276,7 +275,8 @@ AND ABS (logp - {{logp}}) <= {d_logp}
 AND ABS (rotb - {{rotb}}) <= {d_rotb}
 AND ABS (hbd - {{hbd}}) <= {d_hbd}
 AND ABS (hba - {{hba}}) <= {d_hba}
-AND ABS (q - {{q}}) <= {d_q}"""
+AND ABS (q - {{q}}) <= {d_q}
+"""
 diff_keys = ('d_mw_l', 'd_mw_u', 'd_logp', 'd_rotb', 'd_hbd', 'd_hba', 'd_q')
 MATCH_LEVEL_BLOCK = []
 for i, level in enumerate(PROP_DIFF.T):
@@ -301,14 +301,15 @@ def generate_decoys(kwargs):
         select_subquerys = []
         for ti in kwargs['targets']:
             if ti == kwargs['target']: continue
-            q = ('SELECT zinc_id, smiles\n' +
-                 'FROM {{schema}}.simi{{x}}_{ti} other\n'.format(ti=ti) +
-                 'WHERE NOT EXISTS (\n' +
-                 '    SELECT FROM {schema}.simi{tc}_{target} self WHERE self.zinc_id = other.zinc_id)\n'
-                 'AND ' + match)
+            q = (
+                '(SELECT zinc_id, smiles\n' +
+                'FROM {{schema}}.simi{{x}}_{ti} other\n'.format(ti=ti) +
+                'WHERE NOT EXISTS (\n' +
+                '    SELECT FROM {schema}.simi{tc}_{target} self WHERE self.zinc_id = other.zinc_id)\n'
+                'AND ' + match + 'ORDER BY RANDOM() LIMIT {num})\n')
             select_subquerys.append(q)
         query += 'UNION ALL\n'.join(select_subquerys) + '\n'
-        query += 'ON CONFLICT (zinc_id) DO NOTHING;'
+        query += 'ON CONFLICT (zinc_id) DO NOTHING;\n'
         query += 'SELECT smiles, zinc_id FROM decoys ORDER BY RANDOM() LIMIT {num};'
         # print(query)
         # print(query.format(**kwargs))

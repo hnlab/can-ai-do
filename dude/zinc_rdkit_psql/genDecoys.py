@@ -45,6 +45,7 @@ parser.add_argument("-N",
                     help="N candidate decoys per acive, default N = n")
 parser.add_argument("-d", "--dbname", required=True)
 parser.add_argument("-s", "--schema", required=True)
+parser.add_argument("-S", "--schema_part")
 parser.add_argument("--host", default='localhost')
 parser.add_argument("-p", "--port", default='5432')
 parser.add_argument("-P", "--processes", type=int)
@@ -116,6 +117,7 @@ for a_file in args.actives:
 job_name = 'job' + str(abs(hash(''.join(args.actives) + str(dt.now()))))
 # init tables for saving actives
 init_actives = """
+CREATE SCHEMA IF NOT EXISTS {schema};
 CREATE TABLE {job}_a (
     name text,
     smiles text,
@@ -166,12 +168,14 @@ else:
     """.format(schema=args.schema))
     OLD_SIMI_TABLES = set([i[0] for i in cursor.fetchall()])
 
+if args.schema_part is None:
+    args.schema_part = args.schema
 cursor.execute("""
 SELECT table_name
   FROM information_schema.tables
  WHERE table_name ~ 'part'
    AND table_schema = '{schema}'
-""".format(schema=args.schema))
+""".format(schema=args.schema_part))
 part_tables = [i[0] for i in cursor.fetchall()]
 
 create_table_simi = """
@@ -184,7 +188,8 @@ CREATE TABLE IF NOT EXISTS {schema}.simi{simi}_{target} (
             rotb smallint,
             hbd smallint,
             hba smallint,
-            q smallint)
+            q smallint,
+            mfp2 bfp)
 """
 simi_part_kwargs = []
 for kwargs in simi_kwargs:
@@ -194,6 +199,7 @@ for kwargs in simi_kwargs:
     cursor.execute(create_table_simi.format(**kwargs))
     for part in part_tables:
         d = kwargs.copy()
+        d['schema_part'] = args.schema_part
         d['part'] = part
         d['simi_float'] = kwargs['simi'] / 100.
         d['job'] = job_name
@@ -201,12 +207,12 @@ for kwargs in simi_kwargs:
 connect.commit()
 
 get_simi_decoys_query = """
-CREATE INDEX IF NOT EXISTS fps_idx_{part} ON {schema}.{part} USING gist(mfp2);
+CREATE INDEX IF NOT EXISTS fps_idx_{part} ON {schema_part}.{part} USING gist(mfp2);
 SET rdkit.tanimoto_threshold = {simi_float};
 
 INSERT INTO {schema}.simi{simi}_{target}
-SELECT DISTINCT ON (zinc_id) zinc_id, smiles, mw, logp, rotb, hbd, hba, q
-  FROM {schema}.{part} db
+SELECT DISTINCT ON (zinc_id) zinc_id, smiles, mw, logp, rotb, hbd, hba, q, mfp2
+  FROM {schema_part}.{part} db
  CROSS JOIN {job}_a_fps_{target} a
  WHERE a.fp % db.mfp2;
 """
@@ -244,6 +250,8 @@ if N > 0:
 create_index_on_zinc_id = """
 CREATE INDEX IF NOT EXISTS simi{simi}_{target}_pkey
 ON {schema}.simi{simi}_{target} (zinc_id);
+CREATE INDEX IF NOT EXISTS simi{simi}_{target}_fps_idx
+ON {schema}.simi{simi}_{target} USING gist(mfp2);
 """
 for kwargs in simi_kwargs:
     cursor.execute(create_index_on_zinc_id.format(**kwargs))
@@ -306,7 +314,9 @@ def generate_decoys(kwargs):
                 'FROM {{schema}}.simi{{x}}_{ti} other\n'.format(ti=ti) +
                 'WHERE NOT EXISTS (\n' +
                 '    SELECT FROM {schema}.simi{tc}_{target} self WHERE self.zinc_id = other.zinc_id)\n'
-                'AND ' + match + 'ORDER BY RANDOM() LIMIT {num})\n')
+                'AND ' + match +
+                "ORDER BY mfp2 <%> morganbv_fp(mol_from_smiles('{smiles}'::cstring)) LIMIT 5*{num})\n"
+            )
             select_subquerys.append(q)
         query += 'UNION ALL\n'.join(select_subquerys) + '\n'
         query += 'ON CONFLICT (zinc_id) DO NOTHING;\n'

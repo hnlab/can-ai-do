@@ -186,8 +186,9 @@ with open(args.fold_list) as f:
 
 p = multiprocessing.Pool()
 iter_targets = [[i] for i in targets]
-print('Converting smiles into fingerprints and properties:')
-for _ in tqdm(p.imap_unordered(load_smiles, iter_targets), total=len(targets)):
+for _ in tqdm(p.imap_unordered(load_smiles, iter_targets),
+              desc='Converting smiles into fingerprints and properties',
+              total=len(targets)):
     pass
 
 train_test_pairs = []
@@ -200,12 +201,14 @@ for k, fold in folds.items():
 
 nfold = len(train_test_pairs)
 
-print('Benchmarking random forest model on each fold:')
-iter_result = tqdm(p.imap(random_forest, train_test_pairs), total=nfold)
+iter_result = tqdm(p.imap(random_forest, train_test_pairs),
+                   desc='Benchmarking random forest model on each fold',
+                   total=nfold)
 performance_on_fold = [i for i in iter_result]
 
-print('Calculating similarity of closest pairs for figure:')
-iter_simi = tqdm(p.imap(most_simi, train_test_pairs), total=nfold)
+iter_simi = tqdm(p.imap(most_simi, train_test_pairs),
+                 desc='Calculating similarity of closest pairs for figure',
+                 total=nfold)
 most_simi_on_fold = [i for i in iter_simi]
 p.close()
 
@@ -239,11 +242,12 @@ for path, izip in path_izip.items():
             sns.kdeplot(most_simi[k], label=k, ax=axi)
         for k in axj_keys:
             sns.kdeplot(most_simi[k], label=k, ax=axj)
-        for ax in (axi,axj):
-            ax.set_xlabel("Tanimoto coefficient of most similar compound pairs")
+        for ax in (axi, axj):
+            ax.set_xlabel(
+                "Tanimoto coefficient of most similar compound pairs")
             ax.set_ylabel("Density")
-            ax.set_ylim(0,15)
-            ax.set_xlim(0,1)
+            ax.set_ylim(0, 15)
+            ax.set_xlim(0, 1)
         fig.savefig(path)
     print('save figure at {}'.format(path))
 

@@ -220,7 +220,15 @@ axj_keys = [
     'test_actives vs test_decoys', 'test_actives vs train_decoys',
     'test_decoys vs train_decoys'
 ]
-
+axk_keys = [
+    'test_actives vs test_decoys', 'test_actives vs train_actives',
+    'test_actives vs train_decoys'
+]
+axl_keys = [
+    'test_actives vs test_decoys', 'test_decoys vs train_actives',
+    'test_decoys vs train_decoys'
+]
+axes_keys = [axi_keys, axj_keys, axk_keys, axl_keys]
 iter_zip = list(zip(fold_names, performance_on_fold, most_simi_on_fold))
 sorted_zip = sorted(iter_zip, key=lambda x: x[1]['fp']['ROC'])
 
@@ -232,23 +240,20 @@ sorted_path = path.with_suffix('.sorted' + path.suffix)
 path_izip = {path: iter_zip, sorted_path: sorted_zip}
 
 for path, izip in path_izip.items():
-    fig, axes = plt.subplots(nrows=2, ncols=nfold, figsize=(6 * nfold, 12))
-    for (name, performance, most_simi), (axi, axj) in zip(izip, axes.T):
+    fig, axes = plt.subplots(nrows=4, ncols=nfold, figsize=(6 * nfold, 20))
+    for (name, performance, most_simi), target_axes in zip(izip, axes.T):
         title = '{}: ROC {ROC:.3}, EF1 {EF1:.3}'.format(
             name, **performance['fp'])
-        axi.set_title(title)
-        axj.set_title(title)
-        for k in axi_keys:
-            sns.kdeplot(most_simi[k], label=k, ax=axi)
-        for k in axj_keys:
-            sns.kdeplot(most_simi[k], label=k, ax=axj)
-        for ax in (axi, axj):
+        for ax, ax_keys in zip(target_axes, axes_keys):
+            ax.set_title(title)
+            for k in ax_keys:
+                sns.kdeplot(most_simi[k], label=k, ax=ax)
             ax.set_xlabel(
                 "Tanimoto coefficient of most similar compound pairs")
             ax.set_ylabel("Density")
             ax.set_ylim(0, 15)
             ax.set_xlim(0, 1)
-        fig.savefig(path)
+    fig.savefig(path)
     print('save figure at {}'.format(path))
 
 with open(output.with_suffix('.json'), 'w') as f:

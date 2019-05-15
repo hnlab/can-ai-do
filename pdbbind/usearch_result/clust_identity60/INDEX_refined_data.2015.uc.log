@@ -1,0 +1,24 @@
+usearch v11.0.667_i86linux32, 4.0Gb RAM (65.9Gb total), 12 cores
+(C) Copyright 2013-18 Robert C. Edgar, all rights reserved.
+https://drive5.com/usearch
+
+License: gold.yang@qq.com
+
+00:00 37Mb      0.1% Reading INDEX_refined_data.2015.fasta00:00 42Mb    100.0% Reading INDEX_refined_data.2015.fasta
+00:00 8.1Mb  CPU has 12 cores, defaulting to 10 threads   
+00:00 94Mb      0.2% DF00:00 93Mb    100.0% DF
+00:00 94Mb   3706 seqs, 2232 uniques, 1776 singletons (79.6%)
+00:00 94Mb   Min size 1, median 1, max 86, avg 1.66
+00:00 97Mb      0.0% DB00:00 97Mb    100.0% DB
+00:00 136Mb     0.0% Clustering00:00 136Mb     0.0% 0 clusters, max size 0, avg 0.000:00 166Mb   100.0% 1002 clusters, max size 275, avg 3.7
+                                                         
+      Seqs  2232
+  Clusters  1002
+  Max size  275
+  Avg size  3.7
+  Min size  1
+Singletons  522, 23.4% of seqs, 52.1% of clusters
+   Max mem  166Mb
+      Time  1.00s
+Throughput  2232.0 seqs/sec.
+

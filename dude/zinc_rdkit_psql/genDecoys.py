@@ -148,9 +148,8 @@ def generate_decoys(kwargs):
                 SELECT zinc_id, smiles
                 FROM {schema}.{part} db
                 WHERE NOT EXISTS (
-                    SELECT FROM {schema}.{part} ex
-                    WHERE ex.mfp2 % morganbv_fp(mol_from_smiles('{smiles}'::cstring))
-                    AND db.zinc_id = ex.zinc_id
+                    SELECT FROM {schema}.simi35_{target} ex
+                    WHERE db.zinc_id = ex.zinc_id
                 )
                 AND {match}
                 ORDER BY db.mfp2 <%> morganbv_fp(mol_from_smiles('{smiles}'::cstring)) DESC
@@ -196,6 +195,7 @@ for i, target in enumerate(targets):
     for active in actives_props[i]:
         mol_id, smiles, mw, logp, rotb, hbd, hba, q = active
         active_kwargs.append({
+            'target':target,
             'mw': mw,
             'logp': logp,
             'rotb': rotb,

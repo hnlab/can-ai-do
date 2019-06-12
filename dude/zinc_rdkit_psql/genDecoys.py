@@ -38,7 +38,7 @@ parser.add_argument("-d", "--dbname", required=True)
 parser.add_argument("--host", default='localhost')
 parser.add_argument("-p", "--port", default='5432')
 parser.add_argument("-P", "--processes", type=int)
-parser.add_argument("-m", "--match_level", type=int, default=3)
+parser.add_argument("-m", "--match_level", type=int, default=2)
 parser.add_argument("-o", "--output", required=True, help="output dir")
 args = parser.parse_args()
 
@@ -188,7 +188,10 @@ def sample_parts(mw, level):
             overlap += range_overlop(_range, part_mw_range)
         if overlap > 0:
             candidate_parts.append(name)
-            weights.append(overlap)
+            # weights.append(overlap)
+            part_mid = sum(part_mw_range) / 2
+            mid_dist2 = min(1, abs(mw - part_mid))**2
+            weights.append(1 / mid_dist2)
     weights = np.array(weights) / sum(weights)
     N = len(candidate_parts)
     return np.random.choice(candidate_parts, size=N, replace=False, p=weights)
@@ -203,7 +206,7 @@ def generate_decoys(kwargs):
     _decoys = []
     num = args.n * 15
     for level, match in enumerate(MATCH_LEVEL_BLOCK):
-        if level >= args.match_level:
+        if level > args.match_level:
             continue
         selected_parts = sample_parts(kwargs['mw'], level)
         for part in selected_parts:
@@ -212,14 +215,10 @@ def generate_decoys(kwargs):
                 SET rdkit.tanimoto_threshold = {tc};
                 SELECT smiles, zinc_id
                 FROM {part}
-                WHERE
-                -- NOT EXISTS (
-                --     SELECT FROM {part} db
-                --     CROSS JOIN afps_{target} a
-                --     WHERE a.fp % db.mfp2
-                --     )
-                -- AND
-                {match}
+                WHERE NOT EXISTS (
+                    SELECT FROM afps_{target} a
+                    WHERE a.fp % mfp2)
+                AND {match}
                 -- ORDER BY db.mfp2 <%> morganbv_fp(mol_from_smiles('{smiles}'::cstring)) DESC
                 LIMIT {num};
                 '''.format(match=match,
@@ -231,7 +230,7 @@ def generate_decoys(kwargs):
             _cursor.execute(query.format(**kwargs))
             _decoys.extend(_cursor.fetchall())
             _connect.commit()
-            print(part, len(_decoys), PART_MW_RANGES[part], kwargs['mw'])
+            # print(part, len(_decoys), PART_MW_RANGES[part], kwargs['mw'])
             if len(_decoys) >= args.n * 15:
                 _connect.close()
                 return _decoys
@@ -273,10 +272,10 @@ for i, target in enumerate(targets):
     N = len(active_kwargs)
     print("generating decoys for {} actives against target {}:".format(
         N, target))
-    for decoys in tqdm(map(generate_decoys, active_kwargs)):
-        # for decoys in tqdm(pool.imap_unordered(generate_decoys, active_kwargs),
-        #                    total=N,
-        #                    smoothing=0):
+    # for decoys in tqdm(map(generate_decoys, active_kwargs)): # for debug
+    for decoys in tqdm(pool.imap_unordered(generate_decoys, active_kwargs),
+                       total=N,
+                       smoothing=0):
         if len(decoys) > args.n:
             decoys = random.sample(decoys, args.n)
         for smiles, name in decoys:

@@ -192,8 +192,10 @@ def sample_parts(mw, level):
             part_mid = sum(part_mw_range) / 2
             mid_dist2 = min(1, abs(mw - part_mid))**2
             weights.append(1 / mid_dist2)
+    N = len(weights)
+    if N == 0:
+        return []
     weights = np.array(weights) / sum(weights)
-    N = len(candidate_parts)
     return np.random.choice(candidate_parts, size=N, replace=False, p=weights)
 
 
@@ -268,19 +270,24 @@ for i, target in enumerate(targets):
             'q': q,
             'smiles': smiles,
         })
-    pool = Pool(processes=args.processes)
+    p = Pool(processes=args.processes)
     N = len(active_kwargs)
     print("generating decoys for {} actives against target {}:".format(
         N, target))
-    # for decoys in tqdm(map(generate_decoys, active_kwargs)): # for debug
-    for decoys in tqdm(pool.imap_unordered(generate_decoys, active_kwargs),
-                       total=N,
-                       smoothing=0):
+    if args.processes == 1:  # for debug
+        generator = tqdm(map(generate_decoys, active_kwargs),
+                         total=N,
+                         desc=target)
+    else:
+        generator = tqdm(p.imap_unordered(generate_decoys, active_kwargs),
+                         total=N,
+                         desc=target)
+    for decoys in generator:
         if len(decoys) > args.n:
             decoys = random.sample(decoys, args.n)
         for smiles, name in decoys:
             f.write('{} {}\n'.format(smiles, name))
-    pool.close()
+    p.close()
     f.close()
 
 connect.close()

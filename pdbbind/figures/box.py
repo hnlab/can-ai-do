@@ -89,8 +89,8 @@ for metric, metric_name in zip(metrics, metric_names):
         # l = ax.legend(handles[0:2], labels[0:2], bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.)
         loc = 'best'
         if metric == 'pearson_r2_score':
-            loc = 'lower center'
-        l = ax.legend(handles[0:3], split_names, frameon=False, loc=loc)
+            loc = 'upper left'
+        l = ax.legend(handles[0:3], cpn_names, frameon=False, loc=loc)
         ax.set_xlabel('')
         ax.set_ylabel(metric_name)
         ax.set_title(

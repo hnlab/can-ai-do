@@ -43,15 +43,19 @@ cpn_names = ['binding complexes', 'ligands alone', 'proteins alone']
 subsets = ['core', 'refined', 'general_PL']
 splits = ['random', 'scaffold', 'seq']
 split_names = ['random splitting', 'scaffold splitting', 'sequence splitting']
-metrics = ['pearson_r2_score', 'mean_absolute_error']
-metric_names = ['pearson $R^2$', 'MAE']
+# metrics = ['pearson_r2_score', 'mean_absolute_error']
+# metric_names = ['pearson $R^2$', 'MAE']
 
+# MAE no meaning in here.
+metrics = ['pearson_r2_score']
+metric_names = ['pearson $R^2$']
 #%%
 for metric, metric_name in zip(metrics, metric_names):
     for split, split_name in zip(splits, split_names):
         d = df.loc[df['set'] == 'test']
         d = d.loc[d['split'] == split]
         d = d.loc[d['metric'] == metric]
+        d = d.loc[d['version'] == 2015]
         # print(d)
         # showfliers=False hide outliers
         fig, ax = plt.subplots()
@@ -96,7 +100,7 @@ for metric, metric_name in zip(metrics, metric_names):
         ax.set_title(
             f'ACNN performance on test sets of PDBbind subsets\nwith {split_name}'
         )
-        # ax.set_ylim([0.4,1])
+        ax.set_ylim([-0.05,1.05])
         fig.savefig(root / '.'.join((split, metric, 'png')), dpi=300)
 
 #%%
@@ -105,6 +109,7 @@ for metric, metric_name in zip(metrics, metric_names):
         d = df.loc[df['set'] == 'test']
         d = d.loc[d['component'] == component]
         d = d.loc[d['metric'] == metric]
+        d = d.loc[d['version'] == 2015]
         # print(d)
         # showfliers=False hide outliers
         fig, ax = plt.subplots()
@@ -142,12 +147,14 @@ for metric, metric_name in zip(metrics, metric_names):
         # l = ax.legend(handles[0:2], labels[0:2], bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.)
         loc = 'best'
         if metric == 'pearson_r2_score':
-            loc = 'lower center'
+            loc = 'upper left'
         l = ax.legend(handles[0:3], split_names, frameon=False, loc=loc)
         ax.set_xlabel('')
         ax.set_ylabel(metric_name)
         ax.set_title(
             f'ACNN performance on test sets of PDBbind subsets\ncontaining {component_name} '
         )
-        # ax.set_ylim([0.4,1])
+        ax.set_ylim([-0.05,1.05])
         fig.savefig(root / '.'.join((component, metric, 'png')), dpi=300)
+
+#%%

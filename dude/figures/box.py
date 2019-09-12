@@ -32,80 +32,161 @@ for dataset, result in results.items():
             for metric in ('EF1', 'ROC'):
                 value = fold[feature][metric]
                 data.append((dataset, fold, feature, metric, value))
-df = pd.DataFrame(
-    columns=('dataset', 'fold', 'feature', 'metric', 'value'), data=data)
+df = pd.DataFrame(columns=('dataset', 'fold', 'feature', 'metric', 'value'),
+                  data=data)
 
 #%%
-d = df.loc[df['metric'] == 'ROC']
-# showfliers=False hide outliers
-ax = sns.boxplot(
+d = df.loc[df['feature'] == 'prop']
+roc = d.loc[df['metric'] == 'ROC']
+ef1 = d.loc[df['metric'] == 'EF1']
+fig, ax = plt.subplots()
+ax2 = ax.twinx()
+width = 0.4
+colors = sns.color_palette("Set2")
+sns.boxplot(
     x='dataset',
     y='value',
-    hue='feature',
-    hue_order=['prop','fp'],
-    data=d,
+    data=ef1,
+    ax=ax,
     showfliers=False,
-    palette="Set2",
+    positions=[-0.2, 0.8, 1.8],
+    width=0.35,
+    color=colors[0],
 )
-# dodge split points
-ax = sns.swarmplot(
+
+sns.swarmplot(
     x='dataset',
     y='value',
-    hue='feature',
-    hue_order=['prop','fp'],
-    data=d,
+    data=ef1,
+    ax=ax,
     dodge=True,
     linewidth=1.5,
     edgecolor='gray',
-    palette="Set2",
-    # palette=['black', 'black'],
+    color=colors[0],
+    positions=[-0.2, 0.8, 1.8],
 )
-# Get the handles and labels. For this example it'll be 2 tuples
-# of length 4 each.
-handles, labels = ax.get_legend_handles_labels()
-# When creating the legend, only use the first two elements
-# to effectively remove the last two.
-# l = ax.legend(handles[0:2], labels[0:2], bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.)
-l = ax.legend(handles[0:2], ['PROP+RF','FP+RF'], frameon=False)
-ax.set_xlabel('Diverse subsets (8 targets)')
-ax.set_ylabel('AUC')
-# ax.set_ylim([0.4,1])
-plt.savefig(root/'AUC.png', dpi=300)
 
-#%%
-d = df.loc[df['metric'] == 'EF1']
-# showfliers=False hide outliers
-ax = sns.boxplot(
+sns.boxplot(
     x='dataset',
     y='value',
-    hue='feature',
-    hue_order=['prop','fp'],
-    data=d,
+    data=roc,
+    ax=ax2,
     showfliers=False,
-    palette="Set2",
+    positions=[0.2, 1.2, 2.2],
+    width=0.35,
+    # palette="Set2",
+    color=colors[1],
 )
-# dodge split points
-ax = sns.swarmplot(
+sns.swarmplot(
     x='dataset',
     y='value',
-    hue='feature',
-    hue_order=['prop','fp'],
-    data=d,
+    data=roc,
+    ax=ax2,
     dodge=True,
     linewidth=1.5,
     edgecolor='gray',
-    palette="Set2",
-    # palette=['black', 'black'],
+    color=colors[1],
+    positions=[0.2, 1.2, 2.2],
 )
-# Get the handles and labels. For this example it'll be 2 tuples
-# of length 4 each.
-handles, labels = ax.get_legend_handles_labels()
-# When creating the legend, only use the first two elements
-# to effectively remove the last two.
-# l = ax.legend(handles[0:2], labels[0:2], bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.)
-# frameon=False, no box around legend
-l = ax.legend(handles[0:2], ['PROP+RF','FP+RF'], frameon=False)
-ax.set_xlabel('Diverse subsets (8 targets)')
-ax.set_ylabel('EF1%')
-plt.savefig(root/'EF1.png', dpi=300)
+
+ax.set_xlabel('')
+ax.set_ylabel('EF1')
+ax.set_ylim([-6, 62])
+ax2.set_ylabel('ROC')
+ax2.set_ylim([0.46, 1.02])
+
+ax.set_title("PROP+RF performance on three Diverse sets (8 targets)")
+
+# https://github.com/0ut0fcontrol/seaborn/blob/master/seaborn/categorical.py
+def add_legend_data(ax, color, label):
+    """Add a dummy patch object so we can get legend data."""
+    rect = plt.Rectangle([0, 0],
+                         0,
+                         0,
+                         edgecolor='gray',
+                         facecolor=color,
+                         label=label)
+    ax.add_patch(rect)
+add_legend_data(ax, colors[0], 'EF1')
+add_legend_data(ax, colors[1], 'ROC')
+ax.legend(frameon=False)
+fig.savefig(root/'PROP.png', dpi=300)
+#%%
+#%%
+d = df.loc[df['feature'] == 'fp']
+roc = d.loc[df['metric'] == 'ROC']
+ef1 = d.loc[df['metric'] == 'EF1']
+fig, ax = plt.subplots()
+ax2 = ax.twinx()
+width = 0.4
+colors = sns.color_palette("Set2")
+sns.boxplot(
+    x='dataset',
+    y='value',
+    data=ef1,
+    ax=ax,
+    showfliers=False,
+    positions=[-0.2, 0.8, 1.8],
+    width=0.35,
+    color=colors[0],
+)
+
+sns.swarmplot(
+    x='dataset',
+    y='value',
+    data=ef1,
+    ax=ax,
+    dodge=True,
+    linewidth=1.5,
+    edgecolor='gray',
+    color=colors[0],
+    positions=[-0.2, 0.8, 1.8],
+)
+
+sns.boxplot(
+    x='dataset',
+    y='value',
+    data=roc,
+    ax=ax2,
+    showfliers=False,
+    positions=[0.2, 1.2, 2.2],
+    width=0.35,
+    # palette="Set2",
+    color=colors[1],
+)
+sns.swarmplot(
+    x='dataset',
+    y='value',
+    data=roc,
+    ax=ax2,
+    dodge=True,
+    linewidth=1.5,
+    edgecolor='gray',
+    color=colors[1],
+    positions=[0.2, 1.2, 2.2],
+)
+
+ax.set_xlabel('')
+ax.set_ylabel('EF1')
+ax.set_ylim([-6, 62])
+ax2.set_ylabel('ROC')
+ax2.set_ylim([0.46, 1.02])
+
+ax.set_title("FP+RF performance on three Diverse sets (8 targets)")
+
+# https://github.com/0ut0fcontrol/seaborn/blob/master/seaborn/categorical.py
+def add_legend_data(ax, color, label):
+    """Add a dummy patch object so we can get legend data."""
+    rect = plt.Rectangle([0, 0],
+                         0,
+                         0,
+                         edgecolor='gray',
+                         facecolor=color,
+                         label=label)
+    ax.add_patch(rect)
+add_legend_data(ax, colors[0], 'EF1')
+add_legend_data(ax, colors[1], 'ROC')
+ax.legend(frameon=False, loc='upper left')
+fig.savefig(root/'FP.png', dpi=300)
+
 #%%

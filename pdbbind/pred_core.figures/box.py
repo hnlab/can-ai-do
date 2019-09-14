@@ -11,7 +11,10 @@ from matplotlib import pyplot as plt
 print(Path.cwd())
 root = Path('pdbbind/pred_core.figures')
 result = root / 'result'
-csv = result / 'pred_core2015.csv'
+
+# csv = result / 'pred_core2015.csv' # seq simi 0.5, fp simi 0.5
+csv = result / 'core15.scaffold.csv' # seq simi 0.4, scaffold simi 0.8
+
 df = pd.read_csv(csv)
 df.tail()
 
@@ -19,8 +22,13 @@ df.tail()
 components = ['binding', 'ligand', 'protein']
 cpn_names = ['binding complexes', 'ligands alone', 'proteins alone']
 subsets = ['refined', 'general_PL']
-splits = ['random', 'fingerprint', 'sequence']
-split_names = ['random splitting', 'fingerprint splitting', 'sequence splitting']
+
+# splits = ['random', 'fingerprint', 'sequence']
+# split_names = ['random splitting', 'fingerprint splitting', 'sequence splitting']
+
+splits = ['random', 'scaffold', 'sequence']
+split_names = ['random splitting', 'scaffold splitting', 'sequence splitting']
+
 # metrics = ['pearson_r2_score', 'mean_absolute_error']
 # metric_names = ['pearson $R^2$', 'MAE']
 
@@ -80,7 +88,8 @@ for metric, metric_name in zip(metrics, metric_names):
         ax.set_title(
             f'ACNN performance on test sets of PDBbind {version} subsets\nwith {split_name}'
         )
-        ax.set_ylim([-0.05,1.05])
+        ax.set_yticks(np.linspace(0, 1, 11))
+        ax.set_ylim([0.5,0.9])
         fig.savefig(root / f"{version}.{split}.{metric}.png", dpi=300)
 
 #%%
@@ -134,7 +143,8 @@ for metric, metric_name in zip(metrics, metric_names):
         ax.set_title(
             f'ACNN performance on test sets of PDBbind {version} subsets\ncontaining {component_name} '
         )
-        ax.set_ylim([-0.05,1.05])
+        ax.set_yticks(np.linspace(0, 1, 11))
+        ax.set_ylim([0.5,0.9])
         fig.savefig(root / f"{version}.{component}.{metric}.png", dpi=300)
 
 #%%

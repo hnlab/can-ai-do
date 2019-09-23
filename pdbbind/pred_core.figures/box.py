@@ -86,12 +86,12 @@ for metric, metric_name in zip(metrics, metric_names):
         # l = ax.legend(handles[0:2], labels[0:2], bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.)
         loc = 'best'
         if metric == 'pearson_r2_score':
-            loc = 'upper left'
+            loc = 'lower right'
         l = ax.legend(handles[0:3], cpn_names, frameon=False, loc=loc)
         ax.set_xlabel('')
         ax.set_ylabel(metric_name)
         ax.set_title(
-            f'ACNN performance on test sets of PDBbind {version} subsets\nwith {split_name}'
+            f'ACNN performance on PDBbind {version} core subset\nwith {split_name}'
         )
         ax.set_yticks(np.linspace(0, 1, 11))
         ax.set_ylim([0.5, 0.9])
@@ -145,12 +145,12 @@ for metric, metric_name in zip(metrics, metric_names):
         # l = ax.legend(handles[0:2], labels[0:2], bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.)
         loc = 'best'
         if metric == 'pearson_r2_score':
-            loc = 'upper left'
+            loc = 'lower right'
         l = ax.legend(handles[0:3], split_names, frameon=False, loc=loc)
         ax.set_xlabel('')
         ax.set_ylabel(metric_name)
         ax.set_title(
-            f'ACNN performance on test sets of PDBbind {version} subsets\ncontaining {component_name} '
+            f'ACNN performance on PDBbind {version} core subset\ncontaining {component_name} '
         )
         ax.set_yticks(np.linspace(0, 1, 11))
         ax.set_ylim([0.5, 0.9])

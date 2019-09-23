@@ -175,7 +175,8 @@ d = d.loc[d['metric'] == 'pearson_r2_score']
 pt = pd.pivot_table(d,
                     index=['version', 'split', 'component'],
                     columns=['subset'],
-                    values=['value'])
+                    values=['value'],
+                    aggfunc=[np.mean, np.std])
 pt.to_csv(root / 'pivot_table.csv')
 pt
 #%%

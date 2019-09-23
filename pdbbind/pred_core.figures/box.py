@@ -100,7 +100,8 @@ for metric, metric_name in zip(metrics, metric_names):
 #%%
 colors_2dT = np.transpose(colors_2d, (1, 0, 2))
 for metric, metric_name in zip(metrics, metric_names):
-    for component, component_name, cs in zip(components, cpn_names, colors_2dT):
+    for component, component_name, cs in zip(components, cpn_names,
+                                             colors_2dT):
         d = df.loc[df['set'] == 'test']
         d = d.loc[d['component'] == component]
         d = d.loc[d['metric'] == metric]
@@ -162,7 +163,8 @@ d = d.loc[d['metric'] == 'pearson_r2_score']
 pt = pd.pivot_table(d,
                     index=['version', 'split', 'component'],
                     columns=['subset'],
-                    values=['value'])
+                    values=['value'],
+                    aggfunc=[np.mean, np.std])
 pt.to_csv(root / 'pivot_table.csv')
 pt
 #%%

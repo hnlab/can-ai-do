@@ -57,7 +57,7 @@ with open(command_file, 'w') as f:
                 f.write(f'select #{model_id}@/serialNumber={index}\n')
                 if occ >= 0.3:
                     f.write(f"label sel\n")
-                    f.write(f"color blue ,la sel\n")
+                    f.write(f"color black ,la sel\n")
                 if occ <= -0.1:
                     f.write(f"label sel\n")
                     f.write(f"color red ,la sel\n")
@@ -78,7 +78,7 @@ with open(command_file, 'w') as f:
             f.write(f'select #{model_id}@/serialNumber={index}\n')
             if occ >= 0:
                 f.write(f"label sel\n")
-                f.write(f"color blue ,la sel\n")
+                f.write(f"color black ,la sel\n")
             else:
                 f.write(f"label sel\n")
                 f.write(f"color red ,la sel\n")

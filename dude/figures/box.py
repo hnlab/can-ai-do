@@ -11,10 +11,9 @@ from matplotlib import pyplot as plt
 print(Path.cwd())
 root = Path('dude/figures')
 files = {
-    'DUD-E': 'result/DUDE.json',
-    'drug-like': 'result/directT8Z12N62DL.json',
-    'no-limit': 'result/directT8Z12N62.json',
-    # 'no-limit-ZINC15': 'result/directT8Z15N62.json'
+    'DUD-E': 'result/diverse.DUDE.json',
+    'drug-like': 'result/diverse.drug_like.json',
+    'no-limit': 'result/diverse.full.json',
 }
 results = {}
 for k, v in files.items():

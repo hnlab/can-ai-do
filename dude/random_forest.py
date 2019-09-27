@@ -206,57 +206,9 @@ iter_result = tqdm(p.imap(random_forest, train_test_pairs),
                    total=nfold)
 performance_on_fold = [i for i in iter_result]
 
-iter_simi = tqdm(p.imap(most_simi, train_test_pairs),
-                 desc='Calculating similarity of closest pairs for figure',
-                 total=nfold)
-most_simi_on_fold = [i for i in iter_simi]
-p.close()
-
-axi_keys = [
-    'test_actives vs test_decoys', 'test_actives vs train_actives',
-    'test_decoys vs train_actives'
-]
-axj_keys = [
-    'test_actives vs test_decoys', 'test_actives vs train_decoys',
-    'test_decoys vs train_decoys'
-]
-axk_keys = [
-    'test_actives vs test_decoys', 'test_actives vs train_actives',
-    'test_actives vs train_decoys'
-]
-axl_keys = [
-    'test_actives vs test_decoys', 'test_decoys vs train_actives',
-    'test_decoys vs train_decoys'
-]
-axes_keys = [axi_keys, axj_keys, axk_keys, axl_keys]
-iter_zip = list(zip(fold_names, performance_on_fold, most_simi_on_fold))
-sorted_zip = sorted(iter_zip, key=lambda x: x[1]['fp']['ROC'])
-
 output = Path(args.output)
-if output.suffix not in ('.jpg', '.png', '.svg'):
-    path = output.with_suffix('.jpg')
-sorted_path = path.with_suffix('.sorted' + path.suffix)
-
-path_izip = {path: iter_zip, sorted_path: sorted_zip}
-
-for path, izip in path_izip.items():
-    fig, axes = plt.subplots(nrows=4, ncols=nfold, figsize=(6 * nfold, 20))
-    for (name, performance, most_simi), target_axes in zip(izip, axes.T):
-        title = '{}: ROC {ROC:.3}, EF1 {EF1:.3}'.format(
-            name, **performance['fp'])
-        for ax, ax_keys in zip(target_axes, axes_keys):
-            ax.set_title(title)
-            for k in ax_keys:
-                sns.kdeplot(most_simi[k], label=k, ax=ax)
-            ax.set_xlabel(
-                "Tanimoto coefficient of most similar compound pairs")
-            ax.set_ylabel("Density")
-            ax.set_ylim(0, 15)
-            ax.set_xlim(0, 1)
-    fig.savefig(path)
-    print('save figure at {}'.format(path))
-
-with open(output.with_suffix('.json'), 'w') as f:
+# add .suffix in with_suffix() for output with dot '.'
+with open(output.with_suffix(output.suffix + '.json'), 'w') as f:
     result = []
     mean = {}
     for name, performance in zip(fold_names, performance_on_fold):

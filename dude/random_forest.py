@@ -1,17 +1,23 @@
 """A fingerprint + random forest model.
 Try to generate independent and identically distributed figerprint as decoy.
 """
-import os
-import sys
 import json
+import pickle
 import argparse
 import numpy as np
+from pathlib import Path
 import scipy.sparse as sp
 from scipy.spatial import distance
-from multiprocessing import Pool
+
+from tqdm import tqdm
+import multiprocessing
 
 from rdkit import Chem
+from rdkit import DataStructs
 from rdkit.Chem import AllChem
+from rdkit.Chem import Descriptors
+from rdkit.DataStructs import TanimotoSimilarity
+from rdkit.DataStructs import BulkTanimotoSimilarity
 
 from sklearn import metrics
 from sklearn.ensemble import RandomForestClassifier
@@ -19,33 +25,17 @@ from sklearn.ensemble import RandomForestClassifier
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+import seaborn as sns
 
 parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument(
-    '-f',
-    '--fold_list',
-    required=True,
-    help="k-fold config in json, a dict or a list of list")
-parser.add_argument(
-    '-d', '--datadir', default='./all', help="datadir, default is ./all")
-parser.add_argument(
-    '-m',
-    '--mask_important_features',
-    type=int,
-    default=0,
-    help="mask first n important features")
-parser.add_argument(
-    '-I',
-    '--indepen_indent_distr',
-    action="store_true",
-    help="use independent and identically distributed fingerprint as decoy.")
-parser.add_argument(
-    '-R',
-    '--random_zinc_decoy',
-    action="store_true",
-    help="use random pick drug like mol. from zinc as decoys.")
-parser.add_argument(
-    '-X', '--dudx', action="store_true", help="use reducing similar DUDX.")
+parser.add_argument('-f',
+                    '--fold_list',
+                    required=True,
+                    help="k-fold config in json, a dict or a list of list")
+parser.add_argument('-d',
+                    '--datadir',
+                    default='./all',
+                    help="datadir, default is ./all")
 parser.add_argument(
     '-o',
     '--output',
@@ -56,126 +46,66 @@ parser.add_argument(
 args = parser.parse_args()
 
 
-def mol_to_fp(m):
+def mfp2(m):
     # radius 2 MorganFingerprint equal ECFP4
     fp = AllChem.GetMorganFingerprintAsBitVect(m, 2, nBits=1024)
     return fp
 
 
-# import numba
-# @numba.njit()
-# def jaccard(a,b):
-#   ab = a.dot(b.T)[0,0]
-#   return  1.0 - ab / (a.sum()+b.sum()-ab)
-#
-# def indepen_indent_distr(fps):
-#   # fps = active_fps.toarray()
-#   fps = fps[:10]
-#   n_samples, n_bits = fps.shape
-#   p = fps.mean(axis=0)
-#   # matrix to 1d array
-#   p = np.squeeze(np.asarray(p))
-#   p[p>1] = 1.
-#   print("generate decoy fps")
-#   iid_fps = np.random.binomial(1, p, (n_samples*100, n_bits))
-#   print("compute dist")
-#   # dist = distance.cdist(iid_fps, fps, 'jaccard')
-#   iid_fps = sp.csr_matrix(iid_fps)
-#   dist = metrics.pairwise.pairwise_distances(
-#       X=fps, Y=iid_fps, metric=jaccard, n_jobs=-1)
-#   print(np.sum(dist<0.8)/(100*n_samples**2))
-#   return None
+def getProp(mol):
+    mw = Descriptors.ExactMolWt(mol)
+    logp = Descriptors.MolLogP(mol)
+    rotb = Descriptors.NumRotatableBonds(mol)
+    hbd = Descriptors.NumHDonors(mol)
+    hba = Descriptors.NumHAcceptors(mol)
+    q = Chem.GetFormalCharge(mol)
+    return tuple([mw, logp, rotb, hbd, hba, q])
 
 
-def indepen_indent_distr(fps, w=50):
-    fps = fps.toarray()
-    fps = fps.astype(np.int8)
-    n_samples, n_bits = fps.shape
-    p = fps.mean(axis=0)
-    # matrix to 1d array
-    p = np.squeeze(np.asarray(p))
-    p[p > 1] = 1.
-    print("generate decoy fps")
-    iid_fps = np.random.binomial(1, p, (n_samples * w, n_bits))
-    iid_fps = iid_fps.astype(np.int8)
-    print("compute dist")
-    # dist = distance.cdist(fps, iid_fps, 'jaccard') # slower
-    dist = metrics.pairwise.pairwise_distances(
-        X=fps, Y=iid_fps, metric='jaccard', n_jobs=4)
-    print('{}% decoys have similarity > 0.5'.format(
-        np.sum(dist < 0.5) / (w * n_samples**2)))
-    X = sp.vstack((sp.csr_matrix(fps), sp.csr_matrix(iid_fps)))
-    y = np.hstack((np.ones(n_samples, dtype=np.int8),
-                   np.zeros(n_samples * w, dtype=np.int8)))
-    return X, y
-
-
-def load_smiles(names, datadir='./', iid=False, random=False, dudx=False):
+def load_smiles(names):
+    datadir = Path(args.datadir)
     all_fps = []
+    all_props = []
     all_labels = []
-    ws = []
-    print("Loading data set ...")
     for name in names:
-        file_name = os.path.join(datadir, name)
-        activeFile = os.path.join(file_name, 'actives_final.ism')
-        if random:
-            fpf = os.path.join(file_name, 'fpR.npz')
-            labelf = os.path.join(file_name, 'labelR.npz')
-            decoyFile = os.path.join(file_name, 'decoys_random.smi')
-        elif iid:
-            fpf = os.path.join(file_name, 'fpI.npz')
-            labelf = os.path.join(file_name, 'labelI.npz')
-        elif dudx:
-            fpf = os.path.join(file_name, 'fpX.npz')
-            labelf = os.path.join(file_name, 'labelX.npz')
+        tdir = datadir / name
+        # print("Loading data set {} ...".format(tdir))
+        activeFile = list(tdir.glob("actives_final.*"))[0]
+        decoyFile = list(tdir.glob("decoys_final.*"))[0]
+        fpf = tdir / 'fp.pkl'
+        propf = tdir / 'prop.pkl'
+        labelf = tdir / 'label.pkl'
+        if fpf.exists() and propf.exists() and labelf.exists():
+            with open(fpf, 'rb') as f:
+                fps = pickle.load(f)
+            with open(propf, 'rb') as f:
+                props = pickle.load(f)
+            with open(labelf, 'rb') as f:
+                labels = pickle.load(f)
         else:
-            fpf = os.path.join(file_name, 'fp.npz')
-            labelf = os.path.join(file_name, 'label.npz')
-            decoyFile = os.path.join(file_name, 'decoys_final.ism')
-        if os.path.exists(fpf) and os.path.exists(labelf):
-            # print("Reloading data set {} ...".format(fpf))
-            fps = sp.load_npz(fpf)
-            labels = sp.load_npz(labelf)
-        else:
-            # print("Loading smiles {} ...".format(activeFile))
-            active = [
-                m for m in Chem.SmilesMolSupplier(activeFile, titleLine=False)
-                if m is not None
-            ]
-            # print("Loading smiles {} ...".format(decoyFile))
-            with Pool() as p:
-                active_fps = sp.csr_matrix(p.map(mol_to_fp, active))
-            if iid:
-                fps, labels = indepen_indent_distr(active_fps)
-                labels = sp.csr_matrix(labels)
-            else:
-                decoy = [
-                    m for m in Chem.SmilesMolSupplier(
-                        decoyFile, titleLine=False) if m is not None
-                ]
-                with Pool() as p:
-                    decoy_fps = sp.csr_matrix(p.map(mol_to_fp, decoy))
-                fps = sp.vstack((active_fps, decoy_fps))
-                labels = sp.csr_matrix(
-                    np.hstack((np.ones(len(active)), np.zeros(len(decoy)))))
-            # print("Computing figerprints ...")
-            #names = np.array([m.GetProp('_Name') for m in ms])
-            sp.save_npz(fpf, fps)
-            sp.save_npz(labelf, labels)
-        labels = np.squeeze(labels.toarray())
-        all_fps.append(fps)
-        all_labels.append(labels)
-        # X = sp.vstack(all_fps)
-        # y =  sp.hstack(all_labels).toarray().flatten()
-        X = sp.vstack(all_fps)
-        y = np.hstack(all_labels)
-    return X, y
-
-
-with open(args.fold_list) as f:
-    folds = json.load(f)
-    if type(folds) is list:
-        folds = {i: fold for i, fold in enumerate(folds)}
+            fps = []
+            props = []
+            labels = []
+            for m in Chem.SmilesMolSupplier(str(activeFile), titleLine=False):
+                if m is None: continue
+                fps.append(mfp2(m))
+                props.append(getProp(m))
+                labels.append(1)
+            for m in Chem.SmilesMolSupplier(str(decoyFile), titleLine=False):
+                if m is None: continue
+                fps.append(mfp2(m))
+                props.append(getProp(m))
+                labels.append(0)
+            with open(fpf, 'wb') as f:
+                pickle.dump(fps, f)
+            with open(propf, 'wb') as f:
+                pickle.dump(props, f)
+            with open(labelf, 'wb') as f:
+                pickle.dump(labels, f)
+        all_fps.extend(fps)
+        all_props.extend(props)
+        all_labels.extend(labels)
+    return all_fps, all_props, all_labels
 
 
 def enrichment_factor(y_true, y_pred, first=0.01):
@@ -184,102 +114,162 @@ def enrichment_factor(y_true, y_pred, first=0.01):
     n = len(y_pred)
     first_n = max(int(first * n), 1)
     indices = np.argsort(y_pred)[-first_n:]
-    first_active_percent = np.sum(
-        y_true[indices] == 1, dtype=np.float) / first_n
+    first_active_percent = np.sum(y_true[indices] == 1,
+                                  dtype=np.float) / first_n
     active_percent = np.sum(y_true == 1, dtype=np.float) / n
     return first_active_percent / active_percent
 
 
-result = []
-result_features = []
-for k, fold in folds.items():
-    test_names = fold
-    train_names = [
-        name for i, fold_ in folds.items() for name in fold_ if i != k
-    ]
-    train_fps, train_labels = load_smiles(
-        train_names,
-        datadir=args.datadir,
-        iid=args.indepen_indent_distr,
-        random=args.random_zinc_decoy,
-        dudx=args.dudx,
-    )
-    clf = RandomForestClassifier(
-        n_estimators=32,
-        max_depth=10,
-        # min_samples_split=10,
-        min_samples_split=5,
-        min_samples_leaf=2,
-        # class_weight='balanced',
-        class_weight={
-            0: 1,
-            1: 50
-        },
-        random_state=0,
-        n_jobs=8,
-    )
-    print("fiting model for {}".format(fold))
-    clf = clf.fit(train_fps, train_labels)
-    if args.mask_important_features:
-        mask_indices = np.argsort(
-            clf.feature_importances_)[-args.mask_important_features:]
-        train_fps[:, mask_indices] = 0
-        # retrain model
-        clf = clf.fit(train_fps, train_labels)
-    important_indices = np.argsort(clf.feature_importances_)[-10:]
-    important_w = clf.feature_importances_[important_indices]
-    important_fp = train_fps[:, important_indices]
-    active_important_fp = important_fp[train_labels == 1]
-    decoy_important_fp = important_fp[train_labels == 0]
-    active_important_occ = active_important_fp.mean(axis=0)
-    active_important_occ = tuple(np.squeeze(np.asarray(active_important_occ)))
-    decoy_important_occ = decoy_important_fp.mean(axis=0).flatten()
-    decoy_important_occ = tuple(np.squeeze(np.asarray(decoy_important_occ)))
-    fold_result_features = [
-        important_indices,
-        important_w,
-        active_important_occ,
-        decoy_important_occ,
-    ]
-    result_features.append(tuple(clf.feature_importances_))
-    # result_features.append(fold_result_features)
-    print("first 10 important features explain {}%.".format(
-        100 * sum(important_w)))
-    print("important_fp, importantance, active_occ, decoy_occ")
-    for idx, w, a_occ, d_occ in zip(*fold_result_features):
-        print("{:4d}, {:.3f}, {:.3f}, {:.3f}".format(idx, w, a_occ, d_occ))
-    for test_name in test_names:
-        test_fps, test_labels = load_smiles(
-            [test_name],
-            datadir=args.datadir,
-            iid=args.indepen_indent_distr,
-            random=args.random_zinc_decoy,
-            dudx=args.dudx,
+def random_forest(train_test):
+    train_names, test_names = train_test
+    train_fps, train_props, train_labels = load_smiles(train_names)
+    XY = {'fp': (train_fps, train_labels), 'prop': (train_props, train_labels)}
+    result = {}
+    for key, (X, Y) in XY.items():
+        clf = RandomForestClassifier(
+            n_estimators=32,
+            max_depth=10,
+            # min_samples_split=10,
+            min_samples_split=5,
+            min_samples_leaf=2,
+            # class_weight='balanced',
+            class_weight={
+                0: 1,
+                1: 50
+            },
+            random_state=0,
+            # n_jobs=8,
         )
-        if args.mask_important_features:
-            test_fps[:, mask_indices] = 0
-        pred = clf.predict_proba(test_fps)
-        auc_roc = metrics.roc_auc_score(test_labels, pred[:, 1])
-        print('{} AUC_ROC: {}'.format(test_name, auc_roc))
-        auc_prc = metrics.average_precision_score(test_labels, pred[:, 1])
-        print('{} AUC_PRC: {}'.format(test_name, auc_prc))
-        enrich_factor0_5 = enrichment_factor(
-            test_labels, pred[:, 1], first=0.005)
-        print('{} enrich_factor_0.5%: {}'.format(test_name, enrich_factor0_5))
-        enrich_factor1 = enrichment_factor(test_labels, pred[:, 1], first=0.01)
-        print('{} enrich_factor_1%: {}'.format(test_name, enrich_factor1))
-        result.append(
-            [test_name, auc_roc, auc_prc, enrich_factor0_5, enrich_factor1])
+        clf.fit(X, Y)
+        result[key] = {'ROC': 0, 'EF1': 0}
+        for test_name in test_names:
+            test_fps, test_props, test_labels = load_smiles([test_name])
+            if key == 'fp':
+                test_X = test_fps
+            if key == 'prop':
+                test_X = test_props
+            pred = clf.predict_proba(test_X)
+            ROC = metrics.roc_auc_score(test_labels, pred[:, 1])
+            # auc_prc = metrics.average_precision_score(test_labels, pred[:, 1])
+            EF1 = enrichment_factor(test_labels, pred[:, 1], first=0.01)
+            result[key]['ROC'] += ROC / len(test_names)
+            result[key]['EF1'] += EF1 / len(test_names)
+    return result
 
-avg_roc = sum([i[1] for i in result]) / len(result)
-avg_prc = sum([i[2] for i in result]) / len(result)
-avg_ef0_5 = sum([i[3] for i in result]) / len(result)
-avg_ef1 = sum([i[4] for i in result]) / len(result)
-result.append(['average', avg_roc, avg_prc, avg_ef0_5, avg_ef1])
-print("average:\n" + "roc: {}\n".format(avg_roc) +
-      "prc: {}\n".format(avg_prc) + "EF0.5%: {}\n".format(avg_ef0_5) +
-      "EF1%: {}\n".format(avg_ef1))
-with open(args.output + '.performance.json', 'w') as f:
-    json.dump(result, f, indent=2)
-with open(args.output + '.feature_importances.json', 'w') as f:
-    json.dump(result_features, f, indent=2)
+
+def most_simi(train_test):
+    train_names, test_names = train_test
+    train_fps, train_props, train_labels = load_smiles(train_names)
+    test_fps, test_props, test_labels = load_smiles(test_names)
+    train_actives = [fp for fp, y in zip(train_fps, train_labels) if y == 1]
+    train_decoys = [fp for fp, y in zip(train_fps, train_labels) if y == 0]
+    test_actives = [fp for fp, y in zip(test_fps, test_labels) if y == 1]
+    test_decoys = [fp for fp, y in zip(test_fps, test_labels) if y == 0]
+    fps_pairs = {
+        'test_actives vs test_decoys': (test_actives, test_decoys),
+        'test_actives vs train_actives': (test_actives, train_actives),
+        'test_decoys vs train_actives': (test_decoys, train_actives),
+        'test_actives vs train_decoys': (test_actives, train_decoys),
+        'test_decoys vs train_decoys': (test_decoys, train_decoys),
+    }
+    most_simi = {}
+    for k, (fps_a, fps_b) in fps_pairs.items():
+        most_simi[k] = [max(BulkTanimotoSimilarity(i, fps_b)) for i in fps_a]
+    return most_simi
+
+
+with open(args.fold_list) as f:
+    folds = json.load(f)
+    if type(folds) is list:
+        folds = {'{}'.format(fold): fold for fold in folds}
+    targets = [i for fold in folds.values() for i in fold]
+
+p = multiprocessing.Pool()
+iter_targets = [[i] for i in targets]
+for _ in tqdm(p.imap_unordered(load_smiles, iter_targets),
+              desc='Converting smiles into fingerprints and properties',
+              total=len(targets)):
+    pass
+
+train_test_pairs = []
+fold_names = []
+for k, fold in folds.items():
+    fold_names.append(k)
+    test_names = fold
+    train_names = [name for ki, vi in folds.items() for name in vi if ki != k]
+    train_test_pairs.append((train_names, test_names))
+
+nfold = len(train_test_pairs)
+
+iter_result = tqdm(p.imap(random_forest, train_test_pairs),
+                   desc='Benchmarking random forest model on each fold',
+                   total=nfold)
+performance_on_fold = [i for i in iter_result]
+
+iter_simi = tqdm(p.imap(most_simi, train_test_pairs),
+                 desc='Calculating similarity of closest pairs for figure',
+                 total=nfold)
+most_simi_on_fold = [i for i in iter_simi]
+p.close()
+
+axi_keys = [
+    'test_actives vs test_decoys', 'test_actives vs train_actives',
+    'test_decoys vs train_actives'
+]
+axj_keys = [
+    'test_actives vs test_decoys', 'test_actives vs train_decoys',
+    'test_decoys vs train_decoys'
+]
+axk_keys = [
+    'test_actives vs test_decoys', 'test_actives vs train_actives',
+    'test_actives vs train_decoys'
+]
+axl_keys = [
+    'test_actives vs test_decoys', 'test_decoys vs train_actives',
+    'test_decoys vs train_decoys'
+]
+axes_keys = [axi_keys, axj_keys, axk_keys, axl_keys]
+iter_zip = list(zip(fold_names, performance_on_fold, most_simi_on_fold))
+sorted_zip = sorted(iter_zip, key=lambda x: x[1]['fp']['ROC'])
+
+output = Path(args.output)
+if output.suffix not in ('.jpg', '.png', '.svg'):
+    path = output.with_suffix('.jpg')
+sorted_path = path.with_suffix('.sorted' + path.suffix)
+
+path_izip = {path: iter_zip, sorted_path: sorted_zip}
+
+for path, izip in path_izip.items():
+    fig, axes = plt.subplots(nrows=4, ncols=nfold, figsize=(6 * nfold, 20))
+    for (name, performance, most_simi), target_axes in zip(izip, axes.T):
+        title = '{}: ROC {ROC:.3}, EF1 {EF1:.3}'.format(
+            name, **performance['fp'])
+        for ax, ax_keys in zip(target_axes, axes_keys):
+            ax.set_title(title)
+            for k in ax_keys:
+                sns.kdeplot(most_simi[k], label=k, ax=ax)
+            ax.set_xlabel(
+                "Tanimoto coefficient of most similar compound pairs")
+            ax.set_ylabel("Density")
+            ax.set_ylim(0, 15)
+            ax.set_xlim(0, 1)
+    fig.savefig(path)
+    print('save figure at {}'.format(path))
+
+with open(output.with_suffix('.json'), 'w') as f:
+    result = []
+    mean = {}
+    for name, performance in zip(fold_names, performance_on_fold):
+        for key in performance:
+            if key not in mean:
+                mean[key] = {}
+            for k, v in performance[key].items():
+                if k not in mean[key]:
+                    mean[key][k] = 0
+                mean[key][k] += performance[key][k] / nfold
+        performance = performance.copy()
+        performance['fold'] = name
+        result.append(performance)
+    result.append(mean)
+    json.dump(result, f, sort_keys=True, indent=4)
+    print('save performance at {}'.format(f.name))

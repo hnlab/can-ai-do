@@ -16,6 +16,6 @@ p.mwt <= 500 and p.mwt >= 150 and p.xlogp <= 5 and p.rb <=7 and p.psa < 150 and 
 
 # 4. result
 result of diverse subsets. 8-fold cross validation.
-![EF1](figures/EF1.png)
-![AUC](figures/AUC.png)
+![PROP](figures/PROP.png)
+![FP](figures/FP.png)
 

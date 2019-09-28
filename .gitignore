@@ -106,3 +106,4 @@ venv.bak/
 *tmp
 
 .vscode
+seaborn

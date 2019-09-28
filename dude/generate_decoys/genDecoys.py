@@ -27,11 +27,12 @@ parser.add_argument("-n",
                     type=int,
                     help="n decoys per acive. default 50")
 parser.add_argument("-d", "--dbname", default="zinc")
+parser.add_argument("-u", "--user")
 parser.add_argument("-s", "--schema", default="zinc")
 parser.add_argument("--host", default='localhost')
 parser.add_argument("-p", "--port", default='5432')
 parser.add_argument("-P", "--processes", type=int)
-parser.add_argument("-m", "--match_level", type=int, default=3)
+parser.add_argument("-m", "--match_level", type=int, default=5)
 parser.add_argument("-o", "--output", required=True, help="output dir")
 parser.add_argument("--drug_like", action="store_true")
 args = parser.parse_args()
@@ -75,19 +76,21 @@ PROP_DIFF = np.array([
     [0, 1, 2, 2, 3, 3, 4],  #"HBA_RANGES"
     [0, 0, 0, 0, 0, 1, 2],  #"CHG_RANGES"
 ])
+PROP_DIFF = PROP_DIFF.T
 
 
 def generate_decoys(active):
     _connect = psycopg2.connect(host=args.host,
                                 dbname=args.dbname,
+                                user=args.user,
                                 port=args.port)
     _cursor = _connect.cursor()
     _cursor.execute(
         f"CREATE TEMP TABLE decoys (like {args.schema}.{args.subset});"
         f"SET enable_seqscan TO OFF;")
     mol_id, smiles, mw, logp, rotb, hbd, hba, q = active
-    for i, level in enumerate(PROP_DIFF.T):
-        if i >= args.match_level:
+    for i, level in enumerate(PROP_DIFF):
+        if i > args.match_level:
             continue
         mw_lower, mw_upper, logp_diff, rotb_diff, hbd_diff, hba_diff, q_diff = level
         _cursor.execute(
@@ -114,7 +117,10 @@ def generate_decoys(active):
     _connect.close()
 
 
-connect = psycopg2.connect(host=args.host, dbname=args.dbname, port=args.port)
+connect = psycopg2.connect(host=args.host,
+                           dbname=args.dbname,
+                           user=args.user,
+                           port=args.port)
 cursor = connect.cursor()
 
 # loading actives
@@ -135,8 +141,8 @@ for p in map(getProp, f):
     if p is not None:
         actives_props.append(p)
 print(
-    f"{dt.now()}: loading {target} {len(actives_props)} actives from {actives_file}"
-)
+    f"{dt.now()}: loading {target} {len(actives_props)} actives from {actives_file}",
+    flush=True)
 
 # save actives into database
 tmp_name = f"tmp_{random_name()}"
@@ -192,7 +198,6 @@ with open(actives_file, 'w') as f:
         f.write(f'{p[1]} {p[0]}\n')
 
 pool = Pool(processes=args.processes)
-print(f"generating decoys against target {target}:")
 for decoys in tqdm(pool.imap_unordered(generate_decoys, actives_props),
                    desc=f"Decoys for {target}",
                    total=len(actives_props),
@@ -212,15 +217,16 @@ cursor.execute(f"DROP TABLE IF EXISTS {args.schema}.{actives_table};\n"
                f"DROP TABLE IF EXISTS {args.schema}.{decoys_table};\n")
 connect.close()
 
-print(f"max_tc between actives and decoys {max([i[-1] for i in decoys])}")
+print(f"max_tc between actives and decoys {max([i[-1] for i in decoys])}",
+      flush=True)
 decoys_list = [[] for i in actives_props]
-decoys_num = np.zeros(len(actives_props))
+decoys_num = np.zeros(len(actives_props), dtype=int)
 decoys_unfilled = np.ones(len(actives_props), dtype=bool)
 # active: mol_id, smiles, mw, logp, rotb, hbd, hba, q
 actives_props_np = np.array([i[2:8] for i in actives_props])
 for decoy in decoys:
-    for i, level in enumerate(PROP_DIFF.T):
-        if i >= args.match_level:
+    for i, level in enumerate(PROP_DIFF):
+        if i > args.match_level:
             continue
         # mw_lower, mw_upper, logp_diff, rotb_diff, hbd_diff, hba_diff, q_diff = level
         diff_upper = level[1:]
@@ -234,15 +240,23 @@ for decoy in decoys:
         match = match_ind[np.argmin(decoys_num[match_ind])]
         decoys_list[match].append((decoy[1], decoy[0]))
         decoys_num[match] += 1
-        if decoys_num[match] >= 750:
+        if decoys_num[match] >= 500:
             decoys_unfilled[match] = False
         break
 
+print(
+    f"decoys info:\n"
+    f"#actoves assigned < {args.n} decoys: {sum(decoys_num < args.n)}/{len(decoys_num)}",
+    flush=True)
+for i in np.flatnonzero(decoys_num < args.n):
+    print(f"{decoys_num[i]:3d} decoys for active: {actives_props[i]}",
+          flush=True)
+
 with open(decoys_file, 'w') as f:
     for ds in decoys_list:
-        if len(ds) > 50:
-            ds = random.choices(ds, k=50)
+        if len(ds) > args.n:
+            ds = random.choices(ds, k=args.n)
         for decoy in ds:
             smiles, mol_id = decoy
             f.write(f"{smiles} ZINC{mol_id}\n")
-print(f"Total elapsed time: {dt.now()-start}")
+print(f"Total elapsed time: {dt.now()-start}", flush=True)

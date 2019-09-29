@@ -10,7 +10,7 @@ from scipy.spatial import distance
 
 from tqdm import tqdm
 # from multiprocessing.dummy import Pool
-from multiprocessing import Pool
+import multiprocessing as mp
 
 from rdkit import Chem
 from rdkit import DataStructs
@@ -42,6 +42,7 @@ parser.add_argument('-o',
                     '--output',
                     default='result.jpg',
                     help="distribution figures")
+parser.add_argument('--use_dude_ism', action='store_true')
 args = parser.parse_args()
 # args = parser.parse_args([
 #     "-f",
@@ -86,53 +87,57 @@ def load_smiles(names):
 
         activeFile = tdir / 'actives_final.smi'
         if activeFile.exists():
+            # generate in this work
             active_supp = Chem.SmilesMolSupplier(str(activeFile),
                                                  titleLine=False)
         else:
-            activeFile = tdir / 'actives_final.sdf.gz'
-            active_supp = Chem.ForwardSDMolSupplier(gzip.open(activeFile))
+            # from DUD-E
+            if args.use_dude_ism:
+                activeFile = tdir / 'actives_final.ism'
+                active_supp = Chem.SmilesMolSupplier(str(activeFile),titleLine=False)
+            else:
+                activeFile = tdir / 'actives_final.sdf.gz'
+                active_supp = Chem.ForwardSDMolSupplier(gzip.open(activeFile))
 
         decoyFile = tdir / 'decoys_final.smi'
         if decoyFile.exists():
+            # generate in this work
             decoy_supp = Chem.SmilesMolSupplier(str(decoyFile),
                                                 titleLine=False)
         else:
-            decoyFile = tdir / 'decoys_final.sdf.gz'
-            decoy_supp = Chem.ForwardSDMolSupplier(gzip.open(decoyFile))
-        fpf = tdir / 'fp.pkl'
-        propf = tdir / 'propMWHA.pkl'
-        labelf = tdir / 'label.pkl'
-        if fpf.exists() and propf.exists() and labelf.exists():
-            with open(fpf, 'rb') as f:
-                fps = pickle.load(f)
+            # from DUD-E
+            if args.use_dude_ism:
+                decoyFile = tdir / 'decoys_final.ism'
+                decoy_supp = Chem.SmilesMolSupplier(str(decoyFile),titleLine=False)
+            else:
+                decoyFile = tdir / 'decoys_final.sdf.gz'
+                decoy_supp = Chem.ForwardSDMolSupplier(gzip.open(decoyFile))
+
+        propf = activeFile.with_name(activeFile.name + '.prop.MWHA.pkl')
+        labelf = activeFile.with_name(activeFile.name + '.labelf.MWHA.pkl')
+        if propf.exists() and labelf.exists():
             with open(propf, 'rb') as f:
                 props = pickle.load(f)
             with open(labelf, 'rb') as f:
                 labels = pickle.load(f)
         else:
-            fps = []
             props = []
             labels = []
             for m in active_supp:
                 if m is None: continue
-                fps.append(mfp2(m))
                 props.append(getProp(m))
                 labels.append(1)
             for m in decoy_supp:
                 if m is None: continue
-                fps.append(mfp2(m))
                 props.append(getProp(m))
                 labels.append(0)
-            with open(fpf, 'wb') as f:
-                pickle.dump(fps, f)
             with open(propf, 'wb') as f:
                 pickle.dump(props, f)
             with open(labelf, 'wb') as f:
                 pickle.dump(labels, f)
-        all_fps.extend(fps)
         all_props.extend(props)
         all_labels.extend(labels)
-    return all_fps, all_props, all_labels
+    return all_props, all_labels
 
 
 with open(args.fold_list) as f:
@@ -141,7 +146,7 @@ with open(args.fold_list) as f:
         folds = {'{}'.format(fold): fold for fold in folds}
     targets = [i for fold in folds.values() for i in fold]
 
-p = Pool()
+p = mp.Pool()
 iter_targets = [[i] for i in targets]
 for _ in tqdm(p.imap_unordered(load_smiles, iter_targets),
               desc='Converting smiles into fingerprints and properties',
@@ -150,7 +155,7 @@ for _ in tqdm(p.imap_unordered(load_smiles, iter_targets),
 p.close()
 
 #%%
-fps, props, labels = load_smiles(targets)
+props, labels = load_smiles(targets)
 props = np.array(props)
 labels = np.array(labels)
 active_mask = labels == 1
@@ -190,7 +195,7 @@ for p_key, ps, ax in zip(prop_keys, props.T, axes):
     bins = prop_bins[p_key]
     # ax.set_title(targets)
     ax.set_xlabel(prop_names[p_key])
-    print(p_key, min(ps), max(ps))
+    print(f"{p_key}: min {min(ps)} max {max(ps)}")
     decoy = ps[decoy_mask]
     sns.distplot(decoy,
                  label='Decoys',
@@ -212,4 +217,5 @@ for p_key, ps, ax in zip(prop_keys, props.T, axes):
     ax.legend()
 
 fig.savefig(args.output, dpi=300)
+print(f"result figure saved at {args.output}")
 #%%

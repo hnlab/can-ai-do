@@ -11,7 +11,7 @@ import scipy.sparse as sp
 from scipy.spatial import distance
 
 from tqdm import tqdm
-import multiprocessing
+import multiprocessing as mp
 
 from rdkit import Chem
 from rdkit import DataStructs
@@ -102,9 +102,9 @@ def load_smiles(names):
                 decoyFile = tdir / 'decoys_final.sdf.gz'
                 decoy_supp = Chem.ForwardSDMolSupplier(gzip.open(decoyFile))
 
-        fpf = str(activeFile) + '.fp.pkl'
-        propf = str(activeFile) + '.prop.pkl'
-        labelf = str(activeFile) + '.label.pkl'
+        fpf = activeFile.with_name(activeFile.name + '.fp.pkl')
+        propf = activeFile.with_name(activeFile.name + '.prop.pkl')
+        labelf = activeFile.with_name(activeFile.name + '.labelf.pkl')
         if fpf.exists() and propf.exists() and labelf.exists():
             with open(fpf, 'rb') as f:
                 fps = pickle.load(f)
@@ -214,12 +214,13 @@ with open(args.fold_list) as f:
         folds = {'{}'.format(fold): fold for fold in folds}
     targets = [i for fold in folds.values() for i in fold]
 
-p = multiprocessing.Pool()
+p = mp.Pool()
 iter_targets = [[i] for i in targets]
 for _ in tqdm(p.imap_unordered(load_smiles, iter_targets),
               desc='Converting smiles into fingerprints and properties',
               total=len(targets)):
     pass
+p.close()
 
 train_test_pairs = []
 fold_names = []
@@ -231,10 +232,12 @@ for k, fold in folds.items():
 
 nfold = len(train_test_pairs)
 
+p = mp.Pool(min(nfold, mp.cpu_count()))
 iter_result = tqdm(p.imap(random_forest, train_test_pairs),
                    desc='Benchmarking random forest model on each fold',
                    total=nfold)
 performance_on_fold = [i for i in iter_result]
+p.close()
 
 output = Path(args.output)
 # add .suffix in with_suffix() for output with dot '.'

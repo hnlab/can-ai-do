@@ -1,6 +1,7 @@
 """A fingerprint + random forest model.
 Try to generate independent and identically distributed figerprint as decoy.
 """
+import gzip
 import json
 import pickle
 import argparse
@@ -36,6 +37,7 @@ parser.add_argument('-d',
                     '--datadir',
                     default='./all',
                     help="datadir, default is ./all")
+parser.add_argument('--use_dude_ism', action='store_true')
 parser.add_argument(
     '-o',
     '--output',
@@ -69,12 +71,40 @@ def load_smiles(names):
     all_labels = []
     for name in names:
         tdir = datadir / name
-        # print("Loading data set {} ...".format(tdir))
-        activeFile = list(tdir.glob("actives_final.*"))[0]
-        decoyFile = list(tdir.glob("decoys_final.*"))[0]
-        fpf = tdir / 'fp.pkl'
-        propf = tdir / 'prop.pkl'
-        labelf = tdir / 'label.pkl'
+
+        activeFile = tdir / 'actives_final.smi'
+        if activeFile.exists():
+            # generate in this work
+            active_supp = Chem.SmilesMolSupplier(str(activeFile),
+                                                 titleLine=False)
+        else:
+            # from DUD-E
+            if args.use_dude_ism:
+                activeFile = tdir / 'actives_final.ism'
+                active_supp = Chem.SmilesMolSupplier(str(activeFile),
+                                                     titleLine=False)
+            else:
+                activeFile = tdir / 'actives_final.sdf.gz'
+                active_supp = Chem.ForwardSDMolSupplier(gzip.open(activeFile))
+
+        decoyFile = tdir / 'decoys_final.smi'
+        if decoyFile.exists():
+            # generate in this work
+            decoy_supp = Chem.SmilesMolSupplier(str(decoyFile),
+                                                titleLine=False)
+        else:
+            # from DUD-E
+            if args.use_dude_ism:
+                decoyFile = tdir / 'decoys_final.ism'
+                decoy_supp = Chem.SmilesMolSupplier(str(decoyFile),
+                                                    titleLine=False)
+            else:
+                decoyFile = tdir / 'decoys_final.sdf.gz'
+                decoy_supp = Chem.ForwardSDMolSupplier(gzip.open(decoyFile))
+
+        fpf = str(activeFile) + '.fp.pkl'
+        propf = str(activeFile) + '.prop.pkl'
+        labelf = str(activeFile) + '.label.pkl'
         if fpf.exists() and propf.exists() and labelf.exists():
             with open(fpf, 'rb') as f:
                 fps = pickle.load(f)
@@ -86,12 +116,12 @@ def load_smiles(names):
             fps = []
             props = []
             labels = []
-            for m in Chem.SmilesMolSupplier(str(activeFile), titleLine=False):
+            for m in active_supp:
                 if m is None: continue
                 fps.append(mfp2(m))
                 props.append(getProp(m))
                 labels.append(1)
-            for m in Chem.SmilesMolSupplier(str(decoyFile), titleLine=False):
+            for m in decoy_supp:
                 if m is None: continue
                 fps.append(mfp2(m))
                 props.append(getProp(m))

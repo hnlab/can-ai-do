@@ -238,7 +238,7 @@ def assign_decoys(actives_props, decoys, target_dir, heavyMW500=False):
             # mw_lower, mw_upper, logp_diff, rotb_diff, hbd_diff, hba_diff, q_diff = level
             diff_upper = level[1:]
             # decoy: mol_id, smiles, mw, logp, rotb, hbd, hba, q, max_tc
-            diff = np.abs(actives_props_np - np.abs(decoy[2:8]))
+            diff = np.abs(actives_props_np - np.array(decoy[2:8]))
             match_mask = np.all(diff <= diff_upper, axis=1)
             match_mask = match_mask & decoys_unfilled
             if sum(match_mask) == 0:

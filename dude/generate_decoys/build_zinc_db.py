@@ -26,7 +26,7 @@ def getProp(mol_line):
     smiles = Chem.MolToSmiles(mol, isomericSmiles=True)
     mol_id = mol_id.replace('ZINC', '')
     mol_id = int(mol_id)
-    mw = Descriptors.ExactMolWt(mol)
+    mw = Descriptors.MolWt(mol)
     logp = Descriptors.MolLogP(mol)
     rotb = Descriptors.NumRotatableBonds(mol)
     hbd = Descriptors.NumHDonors(mol)

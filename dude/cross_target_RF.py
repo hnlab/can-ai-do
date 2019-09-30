@@ -39,6 +39,10 @@ parser.add_argument('-d',
                     help="datadir, default is ./all")
 parser.add_argument('--use_dude_ism', action='store_true')
 parser.add_argument(
+    '--use_MW',
+    action='store_false',
+    help="use MolWt for random forset, default is HeavyAtomMolWt.")
+parser.add_argument(
     '-o',
     '--output',
     default='result',
@@ -55,16 +59,18 @@ def mfp2(m):
 
 
 def getProp(mol):
-    mw = Descriptors.ExactMolWt(mol)
+    # mw = Descriptors.ExactMolWt(mol)
+    mwha = Descriptors.HeavyAtomMolWt(mol)
+    mw = Descriptors.MolWt(mol)
     logp = Descriptors.MolLogP(mol)
     rotb = Descriptors.NumRotatableBonds(mol)
     hbd = Descriptors.NumHDonors(mol)
     hba = Descriptors.NumHAcceptors(mol)
     q = Chem.GetFormalCharge(mol)
-    return tuple([mw, logp, rotb, hbd, hba, q])
+    return tuple([mwha, mw, logp, rotb, hbd, hba, q])
 
 
-def load_smiles(names):
+def load_smiles(names, HeavyAtomMolWt=True):
     datadir = Path(args.datadir)
     all_fps = []
     all_props = []
@@ -102,40 +108,37 @@ def load_smiles(names):
                 decoyFile = tdir / 'decoys_final.sdf.gz'
                 decoy_supp = Chem.ForwardSDMolSupplier(gzip.open(decoyFile))
 
-        fpf = activeFile.with_name(activeFile.name + '.fp.pkl')
-        propf = activeFile.with_name(activeFile.name + '.prop.pkl')
-        labelf = activeFile.with_name(activeFile.name + '.labelf.pkl')
-        if fpf.exists() and propf.exists() and labelf.exists():
-            with open(fpf, 'rb') as f:
-                fps = pickle.load(f)
+        propf = activeFile.with_name(activeFile.name + '.prop.MWHA.pkl')
+        labelf = activeFile.with_name(activeFile.name + '.labelf.MWHA.pkl')
+        if propf.exists() and labelf.exists():
             with open(propf, 'rb') as f:
                 props = pickle.load(f)
             with open(labelf, 'rb') as f:
                 labels = pickle.load(f)
         else:
-            fps = []
             props = []
             labels = []
             for m in active_supp:
                 if m is None: continue
-                fps.append(mfp2(m))
                 props.append(getProp(m))
                 labels.append(1)
             for m in decoy_supp:
                 if m is None: continue
-                fps.append(mfp2(m))
                 props.append(getProp(m))
                 labels.append(0)
-            with open(fpf, 'wb') as f:
-                pickle.dump(fps, f)
             with open(propf, 'wb') as f:
                 pickle.dump(props, f)
             with open(labelf, 'wb') as f:
                 pickle.dump(labels, f)
-        all_fps.extend(fps)
         all_props.extend(props)
         all_labels.extend(labels)
-    return all_fps, all_props, all_labels
+    # [mwha, mw, logp, rotb, hbd, hba, q]
+    all_props = np.array(all_props)
+    if HeavyAtomMolWt:
+        all_props = all_props[:, (0, 2, 3, 4, 5, 6)]
+    else:
+        all_props = all_props[:, (1, 2, 3, 4, 5, 6)]
+    return all_props, all_labels
 
 
 def enrichment_factor(y_true, y_pred, first=0.01):
@@ -152,7 +155,7 @@ def enrichment_factor(y_true, y_pred, first=0.01):
 
 def random_forest(train_test):
     train_names, test_names = train_test
-    train_fps, train_props, train_labels = load_smiles(train_names)
+    train_props, train_labels = load_smiles(train_names, HeavyAtomMolWt=args.use_MW)
     # XY = {'fp': (train_fps, train_labels), 'prop': (train_props, train_labels)}
     XY = {'prop': (train_props, train_labels)}
     result = {}
@@ -174,9 +177,7 @@ def random_forest(train_test):
         clf.fit(X, Y)
         result[key] = {'ROC': 0, 'EF1': 0}
         for test_name in test_names:
-            test_fps, test_props, test_labels = load_smiles([test_name])
-            if key == 'fp':
-                test_X = test_fps
+            test_props, test_labels = load_smiles([test_name], HeavyAtomMolWt=args.use_MW)
             if key == 'prop':
                 test_X = test_props
             pred = clf.predict_proba(test_X)

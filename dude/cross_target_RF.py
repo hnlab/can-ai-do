@@ -153,21 +153,22 @@ def enrichment_factor(y_true, y_pred, first=0.01):
 def random_forest(train_test):
     train_names, test_names = train_test
     train_fps, train_props, train_labels = load_smiles(train_names)
-    XY = {'fp': (train_fps, train_labels), 'prop': (train_props, train_labels)}
+    # XY = {'fp': (train_fps, train_labels), 'prop': (train_props, train_labels)}
+    XY = {'prop': (train_props, train_labels)}
     result = {}
     for key, (X, Y) in XY.items():
         clf = RandomForestClassifier(
-            n_estimators=32,
-            max_depth=10,
+            n_estimators=400,
+            # max_depth=10,
             # min_samples_split=10,
-            min_samples_split=5,
-            min_samples_leaf=2,
+            # min_samples_split=5,
+            # min_samples_leaf=2,
             # class_weight='balanced',
-            class_weight={
-                0: 1,
-                1: 50
-            },
-            random_state=0,
+            # class_weight={
+            #     0: 1,
+            #     1: 50
+            # },
+            # random_state=0,
             # n_jobs=8,
         )
         clf.fit(X, Y)
@@ -187,27 +188,6 @@ def random_forest(train_test):
     return result
 
 
-def most_simi(train_test):
-    train_names, test_names = train_test
-    train_fps, train_props, train_labels = load_smiles(train_names)
-    test_fps, test_props, test_labels = load_smiles(test_names)
-    train_actives = [fp for fp, y in zip(train_fps, train_labels) if y == 1]
-    train_decoys = [fp for fp, y in zip(train_fps, train_labels) if y == 0]
-    test_actives = [fp for fp, y in zip(test_fps, test_labels) if y == 1]
-    test_decoys = [fp for fp, y in zip(test_fps, test_labels) if y == 0]
-    fps_pairs = {
-        'test_actives vs test_decoys': (test_actives, test_decoys),
-        'test_actives vs train_actives': (test_actives, train_actives),
-        'test_decoys vs train_actives': (test_decoys, train_actives),
-        'test_actives vs train_decoys': (test_actives, train_decoys),
-        'test_decoys vs train_decoys': (test_decoys, train_decoys),
-    }
-    most_simi = {}
-    for k, (fps_a, fps_b) in fps_pairs.items():
-        most_simi[k] = [max(BulkTanimotoSimilarity(i, fps_b)) for i in fps_a]
-    return most_simi
-
-
 with open(args.fold_list) as f:
     folds = json.load(f)
     if type(folds) is list:
@@ -222,26 +202,34 @@ for _ in tqdm(p.imap_unordered(load_smiles, iter_targets),
     pass
 p.close()
 
-train_test_pairs = []
-fold_names = []
-for k, fold in folds.items():
-    fold_names.append(k)
-    test_names = fold
-    train_names = [name for ki, vi in folds.items() for name in vi if ki != k]
-    train_test_pairs.append((train_names, test_names))
+nfold = min(len(targets), 10)
+repeat = 10
+repeat_results = []
+repeat_means = []
+for r in range(repeat):
+    folds = {i: [] for i in range(nfold)}
+    perm = np.random.permutation(len(targets))
+    for i, idx in enumerate(perm):
+        folds[i % nfold].append(targets[idx])
+    train_test_pairs = []
+    fold_names = []
+    for k, fold in folds.items():
+        fold_names.append(k)
+        test_names = fold
+        train_names = [
+            name for ki, vi in folds.items() for name in vi if ki != k
+        ]
+        train_test_pairs.append((train_names, test_names))
 
-nfold = len(train_test_pairs)
+    nfold = len(train_test_pairs)
 
-p = mp.Pool(min(nfold, mp.cpu_count()))
-iter_result = tqdm(p.imap(random_forest, train_test_pairs),
-                   desc='Benchmarking random forest model on each fold',
-                   total=nfold)
-performance_on_fold = [i for i in iter_result]
-p.close()
+    p = mp.Pool(min(nfold, mp.cpu_count()))
+    iter_result = tqdm(p.imap(random_forest, train_test_pairs),
+                       desc='Benchmarking random forest model on each fold',
+                       total=nfold)
+    performance_on_fold = [i for i in iter_result]
+    p.close()
 
-output = Path(args.output)
-# add .suffix in with_suffix() for output with dot '.'
-with open(output.with_suffix(output.suffix + '.json'), 'w') as f:
     result = []
     mean = {}
     for name, performance in zip(fold_names, performance_on_fold):
@@ -255,6 +243,13 @@ with open(output.with_suffix(output.suffix + '.json'), 'w') as f:
         performance = performance.copy()
         performance['fold'] = name
         result.append(performance)
-    result.append(mean)
-    json.dump(result, f, sort_keys=True, indent=4)
+    repeat_results.append(result)
+    repeat_means.append(mean)
+    print(mean)
+
+output = Path(args.output)
+# add .suffix in with_suffix() for output with dot '.'
+with open(output.with_suffix(output.suffix + '.json'), 'w') as f:
+    final_result = [repeat_results, repeat_means]
+    json.dump(final_result, f, sort_keys=True, indent=4)
     print('save performance at {}'.format(f.name))

@@ -1,0 +1,2 @@
+nohup python ../cross_target_RF.py -f ../2split/clusterSplit/folds.json -d all -o result/DUDE_cross_sdf &> cross.sh.sdf.log &
+nohup python ../cross_target_RF.py -f ../2split/clusterSplit/folds.json -d all -o result/DUDE_cross_ism --use_dude_ism &> cross.sh.ism.log &

@@ -20,7 +20,7 @@ p.mwt <= 500 and p.mwt >= 150 and p.xlogp <= 5 and p.rb <=7 and p.psa < 150 and 
 | subset         | PROP EF1 | PROP AUC | FP EF1 | FP AUC |
 | :------------- | -------: | -------: | -----: | -----: |
 | D8_DUDE(ism)   |    21.26 |     0.81 |  10.39 |   0.79 |
-| D8_DUDE(sdf)   |     4.79 |     0.73 |   5.57 |   0.59 |
+| D8_DUDE(sdf)   |     5.57 |     0.59 |   4.79 |   0.73 |
 | D8_rebulit     |     4.48 |     0.57 |   4.51 |   0.72 |
 | Full(3-fold)*  |    11.66 |     0.66 |  14.57 |   0.85 |
 | Full(10-fold)^ |    20.50 |     0.78 |      - |      - |
@@ -50,21 +50,41 @@ Full DUD-E use **.sdf**
 
 ## 4.3 remove actives with HeavyAtomMolWt > 500
 
-Removing actives with heavyAtomMolWt > 500 did not all bias in properties on DUD-E.
+Removing actives with heavyAtomMolWt > 500 did not remove all bias in properties on DUD-E.
 
 Try stricter decoys generation.
 
 | subset              | option   | PROP EF1 | PROP AUC |
 | :------------------ | :------- | -------: | -------: |
 | D8_DUDE             | None     |     8.62 |     0.62 |
-| D8_DUDE             | rmMW>500 |     3.63 |     0.58 |
 | D8_DUDE             | rmRandom |     7.98 |     0.62 |
+| D8_DUDE             | rmMW>500 |     3.63 |     0.58 |
 | D8_rebulit          | None     |     6.26 |     0.56 |
-| D8_rebulit          | rmMW>500 |     3.61 |     0.54 |
 | D8_rebulit          | rmRandom |     5.27 |     0.58 |
+| D8_rebulit          | rmMW>500 |     3.61 |     0.54 |
 | Full(10-fold)       | None     |    20.86 |     0.73 |
 | Full(10-fold)       | rmRandom |    20.22 |     0.72 |
 | Full(10-fold)       | rmMW>500 |    15.94 |     0.70 |
 | Full(3-fold-random) | rmRandom |    19.25 |     0.71 |
 | Full(3-fold-random) | rmMW>500 |    12.70 |     0.67 |
 | Full(3-fold-clust)  | rmMW>500 |    13.21 |     0.67 |
+
+## 4.4 Summary:
+### 4.4.1 Bias on properties is not only from molecular weight.
+
+| subset        | option   | PROP EF1 | PROP AUC |
+| :------------ | :------- | -------: | -------: |
+| Full(10-fold) | None     |    20.86 |     0.73 |
+| Full(10-fold) | rmRandom |    20.22 |     0.72 |
+| Full(10-fold) | rmMW>500 |    15.94 |     0.70 |
+
+`rmMW>500`: remove actives with `HeavyAtomMolWt` > 500 and its decoys.
+
+`rmRandom`: **randomly** remove same number of actives and decoys as `rmMW>500`.
+
+### 4.4.2 Bias not only on properties but also on topology.
+
+| subset       | PROP EF1 | PROP AUC | FP EF1 | FP AUC |
+| :----------- | -------: | -------: | -----: | -----: |
+| D8_DUDE(sdf) |     5.57 |     0.59 |   4.79 |   0.73 |
+| Full(3-fold) |    11.66 |     0.66 |  14.57 |   0.85 |

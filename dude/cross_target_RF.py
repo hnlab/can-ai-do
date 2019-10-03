@@ -42,6 +42,14 @@ parser.add_argument(
     '--use_MW',
     action='store_false',
     help="use MolWt for random forset, default is HeavyAtomMolWt.")
+parser.add_argument('--removeHeavyMW500',
+                    action='store_true',
+                    help="remove actives with HeavyAtomMolWt > 500.")
+parser.add_argument(
+    '--subsample',
+    action='store_true',
+    help=
+    "randomly remove same number of actives and decoys as --removeHeavyMW500")
 parser.add_argument(
     '-o',
     '--output',
@@ -70,7 +78,10 @@ def getProp(mol):
     return tuple([mwha, mw, logp, rotb, hbd, hba, q])
 
 
-def load_smiles(names, HeavyAtomMolWt=True):
+def load_smiles(names,
+                HeavyAtomMolWt=True,
+                removeHeavyMW500=False,
+                subsample=False):
     datadir = Path(args.datadir)
     all_fps = []
     all_props = []
@@ -107,7 +118,6 @@ def load_smiles(names, HeavyAtomMolWt=True):
             else:
                 decoyFile = tdir / 'decoys_final.sdf.gz'
                 decoy_supp = Chem.ForwardSDMolSupplier(gzip.open(decoyFile))
-
         propf = activeFile.with_name(activeFile.name + '.prop.MWHA.pkl')
         labelf = activeFile.with_name(activeFile.name + '.labelf.MWHA.pkl')
         if propf.exists() and labelf.exists():
@@ -130,6 +140,25 @@ def load_smiles(names, HeavyAtomMolWt=True):
                 pickle.dump(props, f)
             with open(labelf, 'wb') as f:
                 pickle.dump(labels, f)
+        if removeHeavyMW500:
+            props = np.array(props)
+            labels = np.array(labels)
+            actives = props[labels == 1]
+            decoys = props[labels == 0]
+            big_active_mask = actives[:, 0] > 500
+            nbig = sum(big_active_mask)
+            fraction = nbig / len(actives)
+            # print(f"left {len(actives) - nbig:4d}/{len(actives):4d} from target {name}")
+            if subsample:
+                perm = np.random.permutation(len(actives))
+                actives = actives[perm[nbig:]]
+            else:
+                actives = actives[~big_active_mask]
+            perm = np.random.permutation(len(decoys))
+            rmN = int(fraction * len(decoys))
+            decoys = decoys[perm[rmN:]]
+            props = np.vstack((actives, decoys))
+            labels = np.hstack((np.ones(len(actives)), np.zeros(len(decoys))))
         all_props.extend(props)
         all_labels.extend(labels)
     # [mwha, mw, logp, rotb, hbd, hba, q]
@@ -155,13 +184,18 @@ def enrichment_factor(y_true, y_pred, first=0.01):
 
 def random_forest(train_test):
     train_names, test_names = train_test
-    train_props, train_labels = load_smiles(train_names, HeavyAtomMolWt=args.use_MW)
+    train_props, train_labels = load_smiles(
+        train_names,
+        HeavyAtomMolWt=args.use_MW,
+        removeHeavyMW500=args.removeHeavyMW500,
+        subsample=args.subsample,
+    )
     # XY = {'fp': (train_fps, train_labels), 'prop': (train_props, train_labels)}
     XY = {'prop': (train_props, train_labels)}
     result = {}
     for key, (X, Y) in XY.items():
         clf = RandomForestClassifier(
-            n_estimators=400,
+            n_estimators=32,
             # max_depth=10,
             # min_samples_split=10,
             # min_samples_split=5,
@@ -177,7 +211,12 @@ def random_forest(train_test):
         clf.fit(X, Y)
         result[key] = {'ROC': 0, 'EF1': 0}
         for test_name in test_names:
-            test_props, test_labels = load_smiles([test_name], HeavyAtomMolWt=args.use_MW)
+            test_props, test_labels = load_smiles(
+                [test_name],
+                HeavyAtomMolWt=args.use_MW,
+                removeHeavyMW500=args.removeHeavyMW500,
+                subsample=args.subsample,
+            )
             if key == 'prop':
                 test_X = test_props
             pred = clf.predict_proba(test_X)
@@ -204,7 +243,7 @@ for _ in tqdm(p.imap_unordered(load_smiles, iter_targets),
 p.close()
 
 nfold = min(len(targets), 10)
-repeat = 10
+repeat = 3
 repeat_results = []
 repeat_means = []
 for r in range(repeat):

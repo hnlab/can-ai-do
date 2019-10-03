@@ -47,3 +47,24 @@ Full DUD-E use **.ism**
 
 Full DUD-E use **.sdf**
 ![dude_sdf](figures/dist/distribution_DUDE_sdf.jpg)
+
+## 4.3 remove actives with HeavyAtomMolWt > 500
+
+Removing actives with heavyAtomMolWt > 500 did not all bias in properties on DUD-E.
+
+Try stricter decoys generation.
+
+| subset              | option   | PROP EF1 | PROP AUC |
+| :------------------ | :------- | -------: | -------: |
+| D8_DUDE             | None     |     8.62 |     0.62 |
+| D8_DUDE             | rmMW>500 |     3.63 |     0.58 |
+| D8_DUDE             | rmRandom |     7.98 |     0.62 |
+| D8_rebulit          | None     |     6.26 |     0.56 |
+| D8_rebulit          | rmMW>500 |     3.61 |     0.54 |
+| D8_rebulit          | rmRandom |     5.27 |     0.58 |
+| Full(10-fold)       | None     |    20.86 |     0.73 |
+| Full(10-fold)       | rmRandom |    20.22 |     0.72 |
+| Full(10-fold)       | rmMW>500 |    15.94 |     0.70 |
+| Full(3-fold-random) | rmRandom |    19.25 |     0.71 |
+| Full(3-fold-random) | rmMW>500 |    12.70 |     0.67 |
+| Full(3-fold-clust)  | rmMW>500 |    13.21 |     0.67 |

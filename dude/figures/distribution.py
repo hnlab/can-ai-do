@@ -43,6 +43,7 @@ parser.add_argument('-o',
                     default='result.jpg',
                     help="distribution figures")
 parser.add_argument('--use_dude_ism', action='store_true')
+parser.add_argument('--single', action='store_true')
 args = parser.parse_args()
 # args = parser.parse_args([
 #     "-f",
@@ -155,6 +156,8 @@ for _ in tqdm(p.imap_unordered(load_smiles, iter_targets),
 p.close()
 
 #%%
+output = Path(args.output)
+output.parent.mkdir(parents=True, exist_ok=True)
 props, labels = load_smiles(targets)
 props = np.array(props)
 labels = np.array(labels)
@@ -216,6 +219,71 @@ for p_key, ps, ax in zip(prop_keys, props.T, axes):
                  ax=ax)
     ax.legend()
 
-fig.savefig(args.output, dpi=300)
+fig.savefig(output, dpi=300)
 print(f"result figure saved at {args.output}")
 #%%
+if args.single:
+    for target in targets:
+        props, labels = load_smiles([target])
+        props = np.array(props)
+        labels = np.array(labels)
+        active_mask = labels == 1
+        decoy_mask = labels == 0
+        # mw, logp, rotb, hbd, hba, q
+        prop_keys = ['mwha', 'mw', 'logp', 'rotb', 'hbd', 'hba', 'q']
+        prop_names = {
+            'mwha': 'Molecular Weight of Heavy Atoms (Ignoring Hydrogens)',
+            'mw': 'Molecular Weight',
+            'logp': 'Calculated LogP',
+            'rotb': 'Number of Rotatable Bonds',
+            'hbd': 'Number of Hydrogen Bond Donors',
+            'hba': 'Number of Hydrogen Bond Acceptors',
+            'q': 'Net Charge'
+        }
+        prop_bins = {
+            'mwha': np.linspace(100, 700, 61),
+            'mw': np.linspace(100, 700, 61),
+            'logp': np.linspace(-8, 10, 46),
+            'rotb': np.linspace(0, 20, 21) + 0.5,
+            'hbd': np.linspace(0, 20, 21) + 0.5,
+            'hba': np.linspace(0, 20, 21) + 0.5,
+            'q': np.linspace(-4, 3, 8) + 0.5
+        }
+        fig, axes = plt.subplots(nrows=7, ncols=1, figsize=(8, 9))
+        fig.subplots_adjust(hspace=.8, top=0.95, bottom=0.05)
+        for p_key, ps, ax in zip(prop_keys, props.T, axes):
+            hist_kws = None
+            if p_key in ['logp']:
+                ax.set_xticks(np.linspace(-8, 10, 10))
+            if p_key in ['rotb', 'hbd', 'hba']:
+                hist_kws = {'rwidth': 0.6}
+                ax.set_xticks(np.linspace(0, 20, 11))
+            if p_key in ['q']:
+                hist_kws = {'rwidth': 0.2}
+                ax.set_xticks(np.linspace(-4, 3, 8))
+            bins = prop_bins[p_key]
+            # ax.set_title(targets)
+            ax.set_xlabel(prop_names[p_key])
+            # print(f"{p_key}: min {min(ps)} max {max(ps)}")
+            decoy = ps[decoy_mask]
+            sns.distplot(decoy,
+                        label='Decoys',
+                        bins=bins,
+                        kde=False,
+                        norm_hist=True,
+                        color='blue',
+                        hist_kws=hist_kws,
+                        ax=ax)
+            active = ps[active_mask]
+            sns.distplot(active,
+                        label='Actives',
+                        bins=bins,
+                        kde=False,
+                        norm_hist=True,
+                        color='red',
+                        hist_kws=hist_kws,
+                        ax=ax)
+            ax.legend()
+        target_output = output.with_suffix(f'.{target}.jpg')
+        fig.savefig(target_output, dpi=300)
+        print(f"result figure saved at {target_output}")

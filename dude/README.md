@@ -88,3 +88,21 @@ Try stricter decoys generation.
 | :----------- | -------: | -------: | -----: | -----: |
 | D8_DUDE(sdf) |     5.57 |     0.59 |   4.79 |   0.73 |
 | Full(3-fold) |    11.66 |     0.66 |  14.57 |   0.85 |
+
+### 4.4.3 combining `rmMW>500` and `family splitting` can remove the bias on properties.
+
+using [family splitting](2split/crossFamilySplit/family3fold.json)
+  - fold1: gpcr(5),nuclear(11),protease(15)
+  - fold2: kinase(26)
+  - fold3: other(45)
+
+`random-3-fold` is randomly generating 3 folds having same size as `family-3-fold`.
+
+| subset              | option   | PROP EF1 | PROP AUC |
+| :------------------ | :------- | -------: | -------: |
+| Full(random-3-fold) | None     |    19.07 |     0.70 |
+| Full(random-3-fold) | rmRandom |    18.52 |     0.70 |
+| Full(random-3-fold) | rmMW>500 |    14.04 |     0.68 |
+| Full(family-3-fold) | None     |    12.14 |     0.65 |
+| Full(family-3-fold) | rmRandom |    12.09 |     0.64 |
+| Full(family-3-fold) | rmMW>500 |     3.95 |     0.60 |

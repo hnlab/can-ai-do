@@ -43,6 +43,9 @@ parser.add_argument(
     '--use_MW',
     action='store_false',
     help="use MolWt for random forset, default is HeavyAtomMolWt.")
+parser.add_argument('--random_fold',
+                    action='store_true',
+                    help="use random folds")
 parser.add_argument('--removeHeavyMW500',
                     action='store_true',
                     help="remove actives with HeavyAtomMolWt > 500.")
@@ -244,22 +247,28 @@ for _ in tqdm(p.imap_unordered(load_smiles, iter_targets),
     pass
 p.close()
 
-nfold = min(len(targets), 10)
-repeat = 3
+repeat = 1
 repeat_results = []
 repeat_means = []
 for r in range(repeat):
-    folds = {i: [] for i in range(nfold)}
-    perm = np.random.permutation(len(targets))
-    for i, idx in enumerate(perm):
-        folds[i % nfold].append(targets[idx])
+    tmp_folds = folds
+    if args.random_fold:
+        perm = np.random.permutation(len(targets))
+        targets = np.array(targets)
+        tmp_folds = {}
+        start = 0
+        for k, fold in folds.items():
+            end = start + len(fold)
+            tmp_folds[k] = list(targets[perm[start:end]])
+            start = end
+
     train_test_pairs = []
     fold_names = []
-    for k, fold in folds.items():
+    for k, fold in tmp_folds.items():
         fold_names.append(k)
         test_names = fold
         train_names = [
-            name for ki, vi in folds.items() for name in vi if ki != k
+            name for ki, vi in tmp_folds.items() for name in vi if ki != k
         ]
         train_test_pairs.append((train_names, test_names))
 
@@ -286,7 +295,7 @@ for r in range(repeat):
         mean[feat] = {}
         for metric in result[feat]:
             mean[feat][metric] = np.mean(list(result[feat][metric].values()))
-    result['folds'] = folds
+    result['folds'] = tmp_folds
     result['mean'] = mean
     repeat_results.append(result)
     repeat_means.append(mean)

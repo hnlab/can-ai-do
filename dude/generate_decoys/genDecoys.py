@@ -85,18 +85,19 @@ def generate_decoys(active):
                                 user=args.user,
                                 port=args.port)
     _cursor = _connect.cursor()
-    _cursor.execute(
-        f"CREATE TEMP TABLE decoys (like {args.schema}.{args.subset});"
-        f"SET enable_seqscan TO OFF;")
+    _cursor.execute(f"SET rdkit.tanimoto_threshold = 0.35;"
+                    f"SET enable_seqscan TO OFF;")
     mol_id, smiles, mw, logp, rotb, hbd, hba, q = active
     for i, level in enumerate(PROP_DIFF):
         if i > args.match_level:
             continue
         mw_lower, mw_upper, logp_diff, rotb_diff, hbd_diff, hba_diff, q_diff = level
         _cursor.execute(
+            f"DROP TABLE IF EXISTS decoys;"
+            f"CREATE TEMP TABLE decoys (like {args.schema}.{args.subset});"
             f"INSERT INTO decoys\n"
             f"SELECT * \n"
-            f"  FROM {args.schema}.{args.subset}\n"
+            f"  FROM {args.schema}.{args.subset} D\n"
             f" WHERE ABS (mw - {mw}) > {mw_lower}\n"
             f"   AND ABS (mw - {mw}) <= {mw_upper}\n"
             f"   AND ABS (logp - {logp}) <= {logp_diff}\n"
@@ -104,16 +105,17 @@ def generate_decoys(active):
             f"   AND ABS (hbd - {hbd}) <= {hbd_diff}\n"
             f"   AND ABS (hba - {hba}) <= {hba_diff}\n"
             f"   AND ABS (q - {q}) <= {q_diff}\n"
-            # f" ORDER BY db.mfp2 <%> morganbv_fp(mol_from_smiles('{smiles}'::cstring)) DESC\n"
-            f" LIMIT 3000 - (SELECT COUNT(*) FROM decoys);")
-    _cursor.execute(
-        f"INSERT INTO {args.schema}.{decoys_table}\n"
-        f"SELECT zinc_id, smiles, mw, logp, rotb, hbd, hba, q, max(tanimoto_sml(D.mfp2,A.mfp2))\n"
-        f"  FROM decoys AS D\n"
-        f" CROSS JOIN {args.schema}.{actives_table}_fps AS A\n"
-        f" GROUP BY zinc_id, smiles, mw, logp, rotb, hbd, hba, q\n"
-        f"    ON CONFLICT (zinc_id) DO NOTHING\n")
-    _connect.commit()
+            f"   AND NOT EXISTS ("
+            f"       SELECT FROM {args.schema}.{actives_table}_fps AS A\n"
+            f"        WHERE A.mfp2 % D.mfp2)\n"
+            # f"ORDER BY RANDOM()\n"
+            f" LIMIT GREATEST(0, 100 - (SELECT COUNT(*) FROM {args.schema}.{decoys_table} WHERE mol_id = '{mol_id}'));\n"
+            f"\n"
+            f"INSERT INTO {args.schema}.{decoys_table}\n"
+            f"SELECT zinc_id, smiles, mw, logp, rotb, hbd, hba, q, '{mol_id}'\n"
+            f"  FROM decoys AS D\n"
+            f"    ON CONFLICT (zinc_id) DO NOTHING\n")
+        _connect.commit()
     _connect.close()
 
 
@@ -148,9 +150,15 @@ elif any([actives_file.match(i) for i in ('*sdf', '*.sdf.gz')]):
 else:
     raise Exception(f"Can't read molecule from {actives_file}")
 
+from collections import Counter
+mol_count = Counter()
 for p in map(getProp, supplier):
     # props: mol_id, smiles, mw, logp, rotb, hbd, hba, q
     if p is not None:
+        p = list(p)
+        mol_id = p[0]
+        mol_count[mol_id] += 1
+        p[0] = f"{mol_id}_{mol_count[mol_id]}"
         actives_props.append(p)
 print(f"{dt.now()}: loading {len(actives_props)} actives from {actives_file}")
 
@@ -187,7 +195,7 @@ cursor.execute(f"CREATE TABLE IF NOT EXISTS {args.schema}.{decoys_table} ("
                f"    hbd smallint,"
                f"    hba smallint,"
                f"      q smallint,"
-               f" max_tc real);")
+               f" mol_id text);")
 connect.commit()
 
 # get decoys for each active
@@ -200,10 +208,11 @@ for decoys in tqdm(pool.imap_unordered(generate_decoys, actives_props),
 pool.close()
 
 cursor.execute(
-    f"SELECT * \n"
-    f"  FROM {args.schema}.{decoys_table}\n"
-    f"ORDER BY max_tc\n"
-    f"LIMIT (SELECT (COUNT(*) / 4) FROM {args.schema}.{decoys_table})")
+    f"SELECT zinc_id, smiles, mw, logp, rotb, hbd, hba, q, mol_id\n"
+    f"  FROM (SELECT d.*,\n"
+    f"               ROW_NUMBER() OVER (PARTITION BY mol_id) AS r\n"
+    f"          FROM {args.schema}.{decoys_table} d) D\n"
+    f"WHERE D.r <= 50;")
 decoys = cursor.fetchall()
 
 cursor.execute(f"DROP TABLE IF EXISTS {args.schema}.{actives_table};\n"
@@ -211,70 +220,20 @@ cursor.execute(f"DROP TABLE IF EXISTS {args.schema}.{actives_table};\n"
                f"DROP TABLE IF EXISTS {args.schema}.{decoys_table};\n")
 connect.close()
 
-print(f"max_tc between actives and decoys {max([i[-1] for i in decoys])}")
-
-
-def assign_decoys(actives_props, decoys, target_dir, heavyMW500=False):
-    actives_file = tdir / "actives_final.smi"
-    decoys_file = tdir / "decoys_final.smi"
-    # prop: mol_id, smiles, mw, logp, rotb, hbd, hba, q
-    with open(actives_file, 'w') as f:
-        for p in actives_props:
-            # p: mol_id, smiles, mw, logp, rotb, hbd, hba, q
-            f.write(f'{p[1]} {p[0]}\n')
-    decoys_list = [[] for i in actives_props]
-    decoys_num = np.zeros(len(actives_props), dtype=int)
-    decoys_unfilled = np.ones(len(actives_props), dtype=bool)
-    # active: mol_id, smiles, mw, logp, rotb, hbd, hba, q
-    actives_props_np = np.array([i[2:8] for i in actives_props])
-    for decoy in decoys:
-        if heavyMW500:
-            m = Chem.MolFromSmiles(decoy[1])
-            if Descriptors.HeavyAtomMolWt(m) > 500:
-                continue
-        for i, level in enumerate(PROP_DIFF):
-            if i > args.match_level:
-                continue
-            # mw_lower, mw_upper, logp_diff, rotb_diff, hbd_diff, hba_diff, q_diff = level
-            diff_upper = level[1:]
-            # decoy: mol_id, smiles, mw, logp, rotb, hbd, hba, q, max_tc
-            diff = np.abs(actives_props_np - np.array(decoy[2:8]))
-            match_mask = np.all(diff <= diff_upper, axis=1)
-            match_mask = match_mask & decoys_unfilled
-            if sum(match_mask) == 0:
-                continue
-            match_ind = np.flatnonzero(match_mask)
-            match = match_ind[np.argmin(decoys_num[match_ind])]
-            decoys_list[match].append((decoy[1], decoy[0]))
-            decoys_num[match] += 1
-            if decoys_num[match] >= 500:
-                decoys_unfilled[match] = False
-            break
-
-    print(f"decoys info:\n"
-          f"#actoves assigned < {args.n} "
-          f"decoys: {sum(decoys_num < args.n)}/{len(decoys_num)}")
-    for i in np.flatnonzero(decoys_num < args.n):
-        print(f"{decoys_num[i]:3d} decoys for active: {actives_props[i]}")
-
-    with open(decoys_file, 'w') as f:
-        for ds in decoys_list:
-            if len(ds) > args.n:
-                ds = random.choices(ds, k=args.n)
-            for decoy in ds:
-                smiles, mol_id = decoy
-                f.write(f"{smiles} ZINC{mol_id}\n")
-
-
+print(f"Total number of decoys: {len(decoys)}")
 output = Path(args.output)
 tdir = output / target
 tdir.mkdir(parents=True, exist_ok=True)
-assign_decoys(actives_props, decoys, tdir, heavyMW500=False)
-
-if args.heavyMW500:
-    tdir = output.with_suffix('.heavyMW500') / target
-    tdir.mkdir(parents=True, exist_ok=True)
-    print("Limiting the molecular weight of heavy atoms <= 500")
-    assign_decoys(actives_props, decoys, tdir, heavyMW500=True)
+actives_file = tdir / "actives_final.smi"
+decoys_file = tdir / "decoys_final.smi"
+with open(actives_file, 'w') as f:
+    for p in actives_props:
+        # p: mol_id, smiles, mw, logp, rotb, hbd, hba, q
+        f.write(f'{p[1]} {p[0]}\n')
+with open(decoys_file, 'w') as f:
+    for decoy in decoys:
+        smiles = decoy[1]
+        zinc_id = decoy[0]
+        f.write(f"{smiles} ZINC{zinc_id}\n")
 
 print(f"Total elapsed time: {dt.now()-start}\n")

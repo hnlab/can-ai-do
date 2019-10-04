@@ -6,6 +6,7 @@ import json
 import pickle
 import argparse
 import numpy as np
+import pandas as pd
 from pathlib import Path
 import scipy.sparse as sp
 from scipy.spatial import distance
@@ -192,8 +193,9 @@ def random_forest(train_test):
     )
     # XY = {'fp': (train_fps, train_labels), 'prop': (train_props, train_labels)}
     XY = {'prop': (train_props, train_labels)}
-    result = {}
+    results = {}
     for key, (X, Y) in XY.items():
+        result = {'ROC': {}, 'EF1': {}}
         clf = RandomForestClassifier(
             n_estimators=32,
             # max_depth=10,
@@ -209,7 +211,6 @@ def random_forest(train_test):
             # n_jobs=8,
         )
         clf.fit(X, Y)
-        result[key] = {'ROC': 0, 'EF1': 0}
         for test_name in test_names:
             test_props, test_labels = load_smiles(
                 [test_name],
@@ -223,9 +224,10 @@ def random_forest(train_test):
             ROC = metrics.roc_auc_score(test_labels, pred[:, 1])
             # auc_prc = metrics.average_precision_score(test_labels, pred[:, 1])
             EF1 = enrichment_factor(test_labels, pred[:, 1], first=0.01)
-            result[key]['ROC'] += ROC / len(test_names)
-            result[key]['EF1'] += EF1 / len(test_names)
-    return result
+            result['ROC'][test_name] = ROC
+            result['EF1'][test_name] = EF1
+        results[key] = result
+    return results
 
 
 with open(args.fold_list) as f:
@@ -270,26 +272,49 @@ for r in range(repeat):
     performance_on_fold = [i for i in iter_result]
     p.close()
 
-    result = []
-    mean = {}
+    result = {}
     for name, performance in zip(fold_names, performance_on_fold):
-        for key in performance:
-            if key not in mean:
-                mean[key] = {}
-            for k, v in performance[key].items():
-                if k not in mean[key]:
-                    mean[key][k] = 0
-                mean[key][k] += performance[key][k] / nfold
-        performance = performance.copy()
-        performance['fold'] = name
-        result.append(performance)
+        for feat in performance:
+            if feat not in result:
+                result[feat] = {}
+            for metric in performance[feat]:
+                if metric not in result[feat]:
+                    result[feat][metric] = {}
+                result[feat][metric].update(performance[feat][metric])
+    mean = {}
+    for feat in result:
+        mean[feat] = {}
+        for metric in result[feat]:
+            mean[feat][metric] = np.mean(list(result[feat][metric].values()))
+    result['folds'] = folds
+    result['mean'] = mean
     repeat_results.append(result)
     repeat_means.append(mean)
     print(mean)
 
+target_performances = []
+for result in repeat_results:
+    for feat in ('fp', 'prop'):
+        if feat not in result:
+            continue
+        for metric in ('ROC', 'EF1'):
+            for target, value in result[feat][metric].items():
+                target_performances.append((target, feat, metric, value))
+df = pd.DataFrame(data=target_performances,
+                  columns=['target', 'feat', 'metric', 'value'])
 output = Path(args.output)
 # add .suffix in with_suffix() for output with dot '.'
 with open(output.with_suffix(output.suffix + '.json'), 'w') as f:
     final_result = [repeat_results, repeat_means]
     json.dump(final_result, f, sort_keys=True, indent=4)
-    print('save performance at {}'.format(f.name))
+    print(f'save performance at {f.name}')
+csv = output.with_suffix(output.suffix + '.csv')
+df.to_csv(csv, index=False)
+print(f'save target performance at {csv}')
+sorted_csv = output.with_suffix(output.suffix + '.sorted.csv')
+EF1 = df[(df.feat == 'prop') & (df.metric == 'EF1')]
+grouped = EF1.groupby(['target', 'feat', 'metric']).mean().reset_index()
+sorted_ = grouped.sort_values(by=['value'], ascending=False)
+sorted_EF1 = EF1.set_index('target').loc[sorted_.target]
+sorted_EF1.to_csv(sorted_csv)
+print(f'save sorted target performance at {sorted_csv}')

@@ -106,3 +106,26 @@ using [family splitting](2split/crossFamilySplit/family3fold.json)
 | Full(family-3-fold) | None     |    12.14 |     0.65 |
 | Full(family-3-fold) | rmRandom |    12.09 |     0.64 |
 | Full(family-3-fold) | rmMW>500 |     3.95 |     0.60 |
+
+### hyperparameters tuning
+
+| subset  | n_estimators | max_depth | min_samples_split | min_samples_leaf | PROP EF1 | PROP AUC |
+| ------- | -----------: | --------: | ----------------: | ---------------: | -------: | -------: |
+| D8_DUDE |           32 |        10 |                 5 |                2 |    10.14 |     0.64 |
+| D8_DUDE |           32 |        10 |                 2 |                1 |    10.81 |     0.63 |
+| D8_DUDE |           32 |      None |                 2 |                1 |     8.63 |     0.61 |
+| D8_DUDE |          100 |      None |                 2 |                1 |     8.70 |     0.63 |
+| D8_DUDE |          100 |        10 |                 2 |                1 |    11.04 |     0.64 |
+| D8_DUDE |          100 |         6 |                 2 |                1 |    10.55 |     0.65 |
+| D8_DUDE |          100 |        20 |                 2 |                1 |     9.09 |     0.64 |
+| D8_DUDE |           32 |        20 |                 2 |                1 |     8.90 |     0.63 |
+| full    |          100 |        10 |                 2 |                1 |    14.21 |     0.68 |
+| full    |          100 |      None |                 2 |                1 |    18.10 |     0.73 |
+| full    |           32 |      None |                 2 |                1 |    17.86 |     0.70 |
+full: DUD-E 102 targets, random-3-fold
+
+### RF performance on DUD-E
+
+![PROP+RF](figures/PROP.jpg)
+
+![FP+RF](figures/FP.jpg)

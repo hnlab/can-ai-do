@@ -66,7 +66,7 @@ args = parser.parse_args()
 
 def mfp2(m):
     # radius 2 MorganFingerprint equal ECFP4
-    fp = AllChem.GetMorganFingerprintAsBitVect(m, 2, nBits=1024)
+    fp = AllChem.GetMorganFingerprintAsBitVect(m, 2, nBits=512)
     return fp
 
 
@@ -122,24 +122,32 @@ def load_smiles(names,
             else:
                 decoyFile = tdir / 'decoys_final.sdf.gz'
                 decoy_supp = Chem.ForwardSDMolSupplier(gzip.open(decoyFile))
+        fpf = activeFile.with_name(activeFile.name + '.fp.MWHA.pkl')
         propf = activeFile.with_name(activeFile.name + '.prop.MWHA.pkl')
         labelf = activeFile.with_name(activeFile.name + '.labelf.MWHA.pkl')
-        if propf.exists() and labelf.exists():
+        if fpf.exists() and propf.exists() and labelf.exists():
+            with open(fpf, 'rb') as f:
+                fps = pickle.load(f)
             with open(propf, 'rb') as f:
                 props = pickle.load(f)
             with open(labelf, 'rb') as f:
                 labels = pickle.load(f)
         else:
+            fps = []
             props = []
             labels = []
             for m in active_supp:
                 if m is None: continue
+                fps.append(mfp2(m))
                 props.append(getProp(m))
                 labels.append(1)
             for m in decoy_supp:
                 if m is None: continue
+                fps.append(mfp2(m))
                 props.append(getProp(m))
                 labels.append(0)
+            with open(fpf, 'wb') as f:
+                pickle.dump(fps, f)
             with open(propf, 'wb') as f:
                 pickle.dump(props, f)
             with open(labelf, 'wb') as f:
@@ -147,22 +155,31 @@ def load_smiles(names,
         if removeHeavyMW500:
             props = np.array(props)
             labels = np.array(labels)
-            actives = props[labels == 1]
-            decoys = props[labels == 0]
-            big_active_mask = actives[:, 0] > 500
+            fps = np.array(fps)
+            actives_props = props[labels == 1]
+            decoys_props = props[labels == 0]
+            actives_fps = fps[labels == 1]
+            decoys_fps = fps[labels == 0]
+            big_active_mask = actives_props[:, 0] > 500
             nbig = sum(big_active_mask)
-            fraction = nbig / len(actives)
+            fraction = nbig / len(actives_props)
             # print(f"left {len(actives) - nbig:4d}/{len(actives):4d} from target {name}")
             if subsample:
-                perm = np.random.permutation(len(actives))
-                actives = actives[perm[nbig:]]
+                perm = np.random.permutation(len(actives_props))
+                actives_props = actives_props[perm[nbig:]]
+                actives_fps = actives_fps[perm[nbig:]]
             else:
-                actives = actives[~big_active_mask]
-            perm = np.random.permutation(len(decoys))
-            rmN = int(fraction * len(decoys))
-            decoys = decoys[perm[rmN:]]
-            props = np.vstack((actives, decoys))
-            labels = np.hstack((np.ones(len(actives)), np.zeros(len(decoys))))
+                actives_props = actives_props[~big_active_mask]
+                actives_fps = actives_fps[~big_active_mask]
+            perm = np.random.permutation(len(decoys_props))
+            rmN = int(fraction * len(decoys_props))
+            decoys_props = decoys_props[perm[rmN:]]
+            decoys_fps = decoys_fps[perm[rmN:]]
+            props = np.vstack((actives_props, decoys_props))
+            fps = np.vstack((actives_fps, decoys_fps))
+            labels = np.hstack(
+                (np.ones(len(actives_props)), np.zeros(len(decoys_props))))
+        all_fps.extend(fps)
         all_props.extend(props)
         all_labels.extend(labels)
     # [mwha, mw, logp, rotb, hbd, hba, q]
@@ -171,7 +188,7 @@ def load_smiles(names,
         all_props = all_props[:, (0, 2, 3, 4, 5, 6)]
     else:
         all_props = all_props[:, (1, 2, 3, 4, 5, 6)]
-    return all_props, all_labels
+    return all_fps, all_props, all_labels
 
 
 def enrichment_factor(y_true, y_pred, first=0.01):
@@ -188,19 +205,19 @@ def enrichment_factor(y_true, y_pred, first=0.01):
 
 def random_forest(train_test):
     train_names, test_names = train_test
-    train_props, train_labels = load_smiles(
+    train_fps, train_props, train_labels = load_smiles(
         train_names,
         HeavyAtomMolWt=args.use_MW,
         removeHeavyMW500=args.removeHeavyMW500,
         subsample=args.subsample,
     )
-    # XY = {'fp': (train_fps, train_labels), 'prop': (train_props, train_labels)}
-    XY = {'prop': (train_props, train_labels)}
+    XY = {'fp': (train_fps, train_labels), 'prop': (train_props, train_labels)}
+    # XY = {'prop': (train_props, train_labels)}
     results = {}
     for key, (X, Y) in XY.items():
         result = {'ROC': {}, 'EF1': {}}
         clf = RandomForestClassifier(
-            n_estimators=32,
+            n_estimators=100,
             # max_depth=10,
             # min_samples_split=10,
             # min_samples_split=5,
@@ -210,17 +227,19 @@ def random_forest(train_test):
             #     0: 1,
             #     1: 50
             # },
-            # random_state=0,
+            random_state=0,
             # n_jobs=8,
         )
         clf.fit(X, Y)
         for test_name in test_names:
-            test_props, test_labels = load_smiles(
+            test_fps, test_props, test_labels = load_smiles(
                 [test_name],
                 HeavyAtomMolWt=args.use_MW,
                 removeHeavyMW500=args.removeHeavyMW500,
                 subsample=args.subsample,
             )
+            if key == 'fp':
+                test_X = test_fps
             if key == 'prop':
                 test_X = test_props
             pred = clf.predict_proba(test_X)
@@ -247,6 +266,7 @@ for _ in tqdm(p.imap_unordered(load_smiles, iter_targets),
     pass
 p.close()
 
+np.random.seed(123)
 repeat = 1
 repeat_results = []
 repeat_means = []
@@ -320,10 +340,13 @@ with open(output.with_suffix(output.suffix + '.json'), 'w') as f:
 csv = output.with_suffix(output.suffix + '.csv')
 df.to_csv(csv, index=False)
 print(f'save target performance at {csv}')
-sorted_csv = output.with_suffix(output.suffix + '.sorted.csv')
-EF1 = df[(df.feat == 'prop') & (df.metric == 'EF1')]
-grouped = EF1.groupby(['target', 'feat', 'metric']).mean().reset_index()
-sorted_ = grouped.sort_values(by=['value'], ascending=False)
-sorted_EF1 = EF1.set_index('target').loc[sorted_.target]
-sorted_EF1.to_csv(sorted_csv)
-print(f'save sorted target performance at {sorted_csv}')
+for feat in ('fp', 'prop'):
+    EF1 = df[(df.feat == feat) & (df.metric == 'EF1')]
+    if EF1.empty:
+        continue
+    grouped = EF1.groupby(['target', 'feat', 'metric']).mean().reset_index()
+    sorted_ = grouped.sort_values(by=['value'], ascending=False)
+    sorted_EF1 = EF1.set_index('target').loc[sorted_.target]
+    sorted_csv = output.with_suffix(output.suffix + f'.{feat}.sorted.csv')
+    sorted_EF1.to_csv(sorted_csv)
+    print(f'save sorted target performance at {sorted_csv}')

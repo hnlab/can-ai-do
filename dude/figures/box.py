@@ -12,31 +12,20 @@ from matplotlib import pyplot as plt
 print(Path.cwd())
 root = Path('dude/figures')
 files = {
-    'DUD-E': 'result/diverse.DUDE.json',
-    'drug-like': 'result/diverse.drug_like.json',
-    'no-limit': 'result/diverse.full.json',
+    'DUD-E\nRandom CV': 'full.random3fold.None.csv',
+    'DUD-E\nCross-Class CV': 'full.family3fold.None.csv',
+    'rmMW>500\nRandom CV': 'full.random3fold.rmMW500.csv',
+    'rmMW>500\nCross-Class CV': 'full.family3fold.rmMW500.csv',
 }
-results = {}
+dfs = {}
 for k, v in files.items():
-    with open(root / v) as f:
-        results[k] = json.load(f)
-print(json.dumps(results['DUD-E'], indent=2))
+    dfs[k] = pd.read_csv(root / 'result' / v)
+df = pd.concat(dfs, names=['dataset']).reset_index()
+N = len(dfs)
 
 #%%
-data = []
-for dataset, result in results.items():
-    for fold in result:
-        if 'fold' not in fold:
-            continue
-        for feature in ('fp', 'prop'):
-            for metric in ('EF1', 'ROC'):
-                value = fold[feature][metric]
-                data.append((dataset, fold, feature, metric, value))
-df = pd.DataFrame(columns=('dataset', 'fold', 'feature', 'metric', 'value'),
-                  data=data)
-
-#%%
-d = df.loc[df['feature'] == 'prop']
+offset = 0.2
+d = df.loc[df['feat'] == 'prop']
 roc = d.loc[df['metric'] == 'ROC']
 ef1 = d.loc[df['metric'] == 'EF1']
 fig, ax = plt.subplots()
@@ -48,22 +37,10 @@ sns.boxplot(
     y='value',
     data=ef1,
     ax=ax,
-    showfliers=False,
-    positions=[-0.2, 0.8, 1.8],
+    # showfliers=False,
+    positions=np.arange(N) - offset,
     width=0.35,
     color=colors[0],
-)
-
-sns.swarmplot(
-    x='dataset',
-    y='value',
-    data=ef1,
-    ax=ax,
-    dodge=True,
-    linewidth=1.5,
-    edgecolor='gray',
-    color=colors[0],
-    positions=[-0.2, 0.8, 1.8],
 )
 
 sns.boxplot(
@@ -71,31 +48,23 @@ sns.boxplot(
     y='value',
     data=roc,
     ax=ax2,
-    showfliers=False,
-    positions=[0.2, 1.2, 2.2],
+    # showfliers=False,
+    positions=np.arange(N) + offset,
     width=0.35,
     # palette="Set2",
     color=colors[1],
 )
-sns.swarmplot(
-    x='dataset',
-    y='value',
-    data=roc,
-    ax=ax2,
-    dodge=True,
-    linewidth=1.5,
-    edgecolor='gray',
-    color=colors[1],
-    positions=[0.2, 1.2, 2.2],
-)
 
 ax.set_xlabel('')
-ax.set_ylabel('EF1')
-ax.set_ylim([-6, 62])
-ax2.set_ylabel('ROC')
-ax2.set_ylim([0.46, 1.02])
+ax.set_ylabel('EF1%')
+ax.set_ylim([-11, 52])
+ax.set_yticks(np.linspace(0, 50, 6))
+ax2.set_ylabel('AUC')
+ax2.set_ylim([0.39, 1.02])
+ax2.set_yticks(np.linspace(0.5, 1, 6))
 
-ax.set_title("PROP+RF performance on three Diverse sets (8 targets)")
+ax.set_title("PROP+RF performance on DUD-E (102 targets)")
+
 
 # https://github.com/0ut0fcontrol/seaborn/blob/master/seaborn/categorical.py
 def add_legend_data(ax, color, label):
@@ -107,13 +76,16 @@ def add_legend_data(ax, color, label):
                          facecolor=color,
                          label=label)
     ax.add_patch(rect)
-add_legend_data(ax, colors[0], 'EF1')
-add_legend_data(ax, colors[1], 'ROC')
-ax.legend(frameon=False)
-fig.savefig(root/'PROP.png', dpi=300)
+
+
+add_legend_data(ax, colors[0], 'EF1%')
+add_legend_data(ax, colors[1], 'AUC')
+ax.legend(frameon=False, loc='lower center', ncol=2)
+fig.savefig(root / 'PROP.jpg', dpi=300)
+
 #%%
-#%%
-d = df.loc[df['feature'] == 'fp']
+offset = 0.2
+d = df.loc[df['feat'] == 'fp']
 roc = d.loc[df['metric'] == 'ROC']
 ef1 = d.loc[df['metric'] == 'EF1']
 fig, ax = plt.subplots()
@@ -125,22 +97,10 @@ sns.boxplot(
     y='value',
     data=ef1,
     ax=ax,
-    showfliers=False,
-    positions=[-0.2, 0.8, 1.8],
+    # showfliers=False,
+    positions=np.arange(N) - offset,
     width=0.35,
     color=colors[0],
-)
-
-sns.swarmplot(
-    x='dataset',
-    y='value',
-    data=ef1,
-    ax=ax,
-    dodge=True,
-    linewidth=1.5,
-    edgecolor='gray',
-    color=colors[0],
-    positions=[-0.2, 0.8, 1.8],
 )
 
 sns.boxplot(
@@ -148,31 +108,23 @@ sns.boxplot(
     y='value',
     data=roc,
     ax=ax2,
-    showfliers=False,
-    positions=[0.2, 1.2, 2.2],
+    # showfliers=False,
+    positions=np.arange(N) + offset,
     width=0.35,
     # palette="Set2",
     color=colors[1],
 )
-sns.swarmplot(
-    x='dataset',
-    y='value',
-    data=roc,
-    ax=ax2,
-    dodge=True,
-    linewidth=1.5,
-    edgecolor='gray',
-    color=colors[1],
-    positions=[0.2, 1.2, 2.2],
-)
 
 ax.set_xlabel('')
-ax.set_ylabel('EF1')
-ax.set_ylim([-6, 62])
-ax2.set_ylabel('ROC')
-ax2.set_ylim([0.46, 1.02])
+ax.set_ylabel('EF1%')
+ax.set_ylim([-11, 52])
+ax.set_yticks(np.linspace(0, 50, 6))
+ax2.set_ylabel('AUC')
+ax2.set_ylim([0.39, 1.02])
+ax2.set_yticks(np.linspace(0.5, 1, 6))
 
-ax.set_title("FP+RF performance on three Diverse sets (8 targets)")
+ax.set_title("FP+RF performance on DUD-E (102 targets)")
+
 
 # https://github.com/0ut0fcontrol/seaborn/blob/master/seaborn/categorical.py
 def add_legend_data(ax, color, label):
@@ -184,9 +136,11 @@ def add_legend_data(ax, color, label):
                          facecolor=color,
                          label=label)
     ax.add_patch(rect)
-add_legend_data(ax, colors[0], 'EF1')
-add_legend_data(ax, colors[1], 'ROC')
-ax.legend(frameon=False, loc='upper left')
-fig.savefig(root/'FP.png', dpi=300)
+
+
+add_legend_data(ax, colors[0], 'EF1%')
+add_legend_data(ax, colors[1], 'AUC')
+ax.legend(frameon=False, loc='lower center', ncol=2)
+fig.savefig(root / 'FP.jpg', dpi=300)
 
 #%%

@@ -248,6 +248,7 @@ def random_forest(train_test):
             EF1 = enrichment_factor(test_labels, pred[:, 1], first=0.01)
             result['ROC'][test_name] = ROC
             result['EF1'][test_name] = EF1
+        result['feature_importances'] = list(clf.feature_importances_)
         results[key] = result
     return results
 
@@ -258,14 +259,22 @@ with open(args.fold_list) as f:
         folds = {'{}'.format(fold): fold for fold in folds}
     targets = [i for fold in folds.values() for i in fold]
 
-p = mp.Pool()
 iter_targets = [[i] for i in targets]
-for _ in tqdm(p.imap_unordered(load_smiles, iter_targets),
-              desc='Converting smiles into fingerprints and properties',
-              total=len(targets)):
-    pass
+active_num = 0
+decoy_num = 0
+p = mp.Pool()
+for _, _, labels in tqdm(
+        p.imap_unordered(load_smiles, iter_targets),
+        desc='Converting smiles into fingerprints and properties',
+        total=len(targets)):
+    labels = np.asarray(labels)
+    active_num += sum(labels == 1)
+    decoy_num += sum(labels == 0)
 p.close()
+print(f"total actives:{active_num}, total decoy:{decoy_num}")
 
+feature_sets = ('prop', 'fp')
+metric_names = ('ROC', 'EF1')
 np.random.seed(123)
 repeat = 1
 repeat_results = []
@@ -303,17 +312,20 @@ for r in range(repeat):
 
     result = {}
     for name, performance in zip(fold_names, performance_on_fold):
-        for feat in performance:
+        for feat in feature_sets:
             if feat not in result:
                 result[feat] = {}
-            for metric in performance[feat]:
+            print(performance.keys())
+            print(performance[feat].keys())
+            result[feat]['feature_importances'] = performance[feat]['feature_importances']
+            for metric in metric_names:
                 if metric not in result[feat]:
                     result[feat][metric] = {}
                 result[feat][metric].update(performance[feat][metric])
     mean = {}
-    for feat in result:
+    for feat in feature_sets:
         mean[feat] = {}
-        for metric in result[feat]:
+        for metric in metric_names:
             mean[feat][metric] = np.mean(list(result[feat][metric].values()))
     result['folds'] = tmp_folds
     result['mean'] = mean
@@ -323,10 +335,10 @@ for r in range(repeat):
 
 target_performances = []
 for result in repeat_results:
-    for feat in ('fp', 'prop'):
+    for feat in feature_sets:
         if feat not in result:
             continue
-        for metric in ('ROC', 'EF1'):
+        for metric in metric_names:
             for target, value in result[feat][metric].items():
                 target_performances.append((target, feat, metric, value))
 df = pd.DataFrame(data=target_performances,
@@ -340,7 +352,7 @@ with open(output.with_suffix(output.suffix + '.json'), 'w') as f:
 csv = output.with_suffix(output.suffix + '.csv')
 df.to_csv(csv, index=False)
 print(f'save target performance at {csv}')
-for feat in ('fp', 'prop'):
+for feat in feature_sets:
     EF1 = df[(df.feat == feat) & (df.metric == 'EF1')]
     if EF1.empty:
         continue

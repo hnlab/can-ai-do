@@ -12,10 +12,10 @@ from matplotlib import pyplot as plt
 print(Path.cwd())
 root = Path('dude/figures')
 files = {
-    'DUD-E\nRandom CV': 'full.random3fold.None.csv',
-    'DUD-E\nCross-Class CV': 'full.family3fold.None.csv',
-    'rmMW>500\nRandom CV': 'full.random3fold.rmMW500.csv',
-    'rmMW>500\nCross-Class CV': 'full.family3fold.rmMW500.csv',
+    'Random CV\nDUD-E': 'full.random3fold.None.csv',
+    'Random CV\nDUD-E (rmMW>500)': 'full.random3fold.rmMW500.csv',
+    'Cross-Class CV\nDUD-E': 'full.family3fold.None.csv',
+    'Cross-Class CV\nDUD-E (rmMW>500)': 'full.family3fold.rmMW500.csv',
 }
 dfs = {}
 for k, v in files.items():

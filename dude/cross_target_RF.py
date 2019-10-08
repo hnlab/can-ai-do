@@ -39,6 +39,7 @@ parser.add_argument('-d',
                     default='./all',
                     help="datadir, default is ./all")
 parser.add_argument('--use_dude_ism', action='store_true')
+parser.add_argument('--use_dude_sdf', action='store_true')
 parser.add_argument(
     '--use_MW',
     action='store_false',
@@ -82,6 +83,22 @@ def getProp(mol):
     return tuple([mwha, mw, logp, rotb, hbd, hba, q])
 
 
+def ForwardMol2MolSupplier(file_obj, sanitize=True):
+    lines = []
+    for line in file_obj:
+        if line.startswith(b"@<TRIPOS>MOLECULE"):
+            if lines:
+                block = b''.join(lines)
+                yield Chem.MolFromMol2Block(block, sanitize=sanitize)
+                lines = []
+        lines.append(line)
+    else:
+        if lines:
+            block = b''.join(lines)
+            yield Chem.MolFromMol2Block(block, sanitize=sanitize)
+    file_obj.close()
+
+
 def load_smiles(names,
                 HeavyAtomMolWt=True,
                 removeHeavyMW500=False,
@@ -100,13 +117,16 @@ def load_smiles(names,
                                                  titleLine=False)
         else:
             # from DUD-E
-            if args.use_dude_ism:
+            if args.use_dude_ism:  # no charge and hydrogens information.
                 activeFile = tdir / 'actives_final.ism'
                 active_supp = Chem.SmilesMolSupplier(str(activeFile),
                                                      titleLine=False)
-            else:
+            elif args.use_dude_sdf:  # duplicate
                 activeFile = tdir / 'actives_final.sdf.gz'
                 active_supp = Chem.ForwardSDMolSupplier(gzip.open(activeFile))
+            else:
+                activeFile = tdir / 'actives_final.mol2.gz'
+                active_supp = ForwardMol2MolSupplier(gzip.open(activeFile))
 
         decoyFile = tdir / 'decoys_final.smi'
         if decoyFile.exists():
@@ -119,9 +139,12 @@ def load_smiles(names,
                 decoyFile = tdir / 'decoys_final.ism'
                 decoy_supp = Chem.SmilesMolSupplier(str(decoyFile),
                                                     titleLine=False)
-            else:
+            elif args.use_dude_sdf:
                 decoyFile = tdir / 'decoys_final.sdf.gz'
                 decoy_supp = Chem.ForwardSDMolSupplier(gzip.open(decoyFile))
+            else:
+                decoyFile = tdir / 'decoys_final.mol2.gz'
+                decoy_supp = ForwardMol2MolSupplier(gzip.open(decoyFile))
         fpf = activeFile.with_name(activeFile.name + '.fp.MWHA.pkl')
         propf = activeFile.with_name(activeFile.name + '.prop.MWHA.pkl')
         labelf = activeFile.with_name(activeFile.name + '.labelf.MWHA.pkl')
@@ -136,8 +159,14 @@ def load_smiles(names,
             fps = []
             props = []
             labels = []
+            canonical_smiles_set = set()
             for m in active_supp:
                 if m is None: continue
+                smiles = Chem.MolToSmiles(m)
+                if smiles in canonical_smiles_set:
+                    continue
+                else:
+                    canonical_smiles_set.add(smiles)
                 fps.append(mfp2(m))
                 props.append(getProp(m))
                 labels.append(1)
@@ -260,18 +289,25 @@ with open(args.fold_list) as f:
     targets = [i for fold in folds.values() for i in fold]
 
 iter_targets = [[i] for i in targets]
+p = mp.Pool()
+for _ in tqdm(p.imap_unordered(load_smiles, iter_targets),
+              desc='Converting smiles into fingerprints and properties',
+              total=len(targets)):
+    pass
+p.close()
+
 active_num = 0
 decoy_num = 0
-p = mp.Pool()
-for _, _, labels in tqdm(
-        p.imap_unordered(load_smiles, iter_targets),
-        desc='Converting smiles into fingerprints and properties',
-        total=len(targets)):
+if args.removeHeavyMW500:
+    description = 'count compounds with MW <= 500'
+else:
+    description = 'Total compounds'
+for t in tqdm(targets, desc=description):
+    _, _, labels = load_smiles([t], removeHeavyMW500=args.removeHeavyMW500)
     labels = np.asarray(labels)
     active_num += sum(labels == 1)
     decoy_num += sum(labels == 0)
-p.close()
-print(f"total actives:{active_num}, total decoy:{decoy_num}")
+print(f"\ntotal actives:{active_num}, total decoy:{decoy_num}")
 
 feature_sets = ('prop', 'fp')
 metric_names = ('ROC', 'EF1')
@@ -315,9 +351,11 @@ for r in range(repeat):
         for feat in feature_sets:
             if feat not in result:
                 result[feat] = {}
-            print(performance.keys())
-            print(performance[feat].keys())
-            result[feat]['feature_importances'] = performance[feat]['feature_importances']
+            feat_imports = performance[feat]['feature_importances']
+            if 'feature_importances' in result[feat]:
+                result[feat]['feature_importances'].append(feat_imports)
+            else:
+                result[feat]['feature_importances'] = [feat_imports]
             for metric in metric_names:
                 if metric not in result[feat]:
                     result[feat][metric] = {}

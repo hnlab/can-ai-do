@@ -1,6 +1,4 @@
-nohup python ../cross_target_RF.py -f ../2split/crossFamilySplit/family3fold.json -d all --random_fold -o result/full.random3fold.None &> result/full.random3fold.None.log &
-nohup python ../cross_target_RF.py -f ../2split/crossFamilySplit/family3fold.json -d all -o result/full.family3fold.None &> result/full.family3fold.None.log &
-nohup python ../cross_target_RF.py -f ../2split/crossFamilySplit/family3fold.json -d all --random_fold -o result/full.random3fold.rmMW500 --removeHeavyMW500 &> result/full.random3fold.rmMW500.log &
-nohup python ../cross_target_RF.py -f ../2split/crossFamilySplit/family3fold.json -d all -o result/full.family3fold.rmMW500 --removeHeavyMW500 &> result/full.family3fold.rmMW500.log &
-# nohup python ../cross_target_RF.py -f ../2split/crossFamilySplit/family3fold.json -d all -o result/full.family3fold.rmRandom --removeHeavyMW500 --subsample &> result/full.family3fold.rmRandom.log &
-# nohup python ../cross_target_RF.py -f ../2split/crossFamilySplit/family3fold.json -d all --random_fold -o result/full.random3fold.rmRandom --removeHeavyMW500 --subsample &> result/full.random3fold.rmRandom.log &
+nohup python ../cross_target_RF.py -o result/full.random3fold.None -f ../2split/crossFamilySplit/family3fold.json -d all --random_fold &> result/full.random3fold.None.log &
+nohup python ../cross_target_RF.py -o result/full.random3fold.rmMW500 -f ../2split/crossFamilySplit/family3fold.json -d all --random_fold --removeHeavyMW500 &> result/full.random3fold.rmMW500.log &
+nohup python ../cross_target_RF.py -o result/full.family3fold.None -f ../2split/crossFamilySplit/family3fold.json -d all &> result/full.family3fold.None.log &
+nohup python ../cross_target_RF.py -o result/full.family3fold.rmMW500 -f ../2split/crossFamilySplit/family3fold.json -d all --removeHeavyMW500 &> result/full.family3fold.rmMW500.log &

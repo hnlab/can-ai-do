@@ -5,6 +5,7 @@ import json
 import pickle
 import argparse
 import numpy as np
+import pandas as pd
 from pathlib import Path
 import scipy.sparse as sp
 from scipy.spatial import distance
@@ -47,6 +48,10 @@ parser.add_argument('-o',
                     default='result.jpg',
                     help="distribution figures")
 parser.add_argument('--single', action='store_true')
+parser.add_argument(
+    '--feat_imports',
+    nargs='+',
+    help="random forest results in .json format having feature_importances")
 args = parser.parse_args()
 
 
@@ -294,10 +299,10 @@ for p_key, ps, ax in zip(prop_keys, props.T, axes):
 
 fig.savefig(output, dpi=300)
 print(f"result figure saved at {args.output}")
-#%%
+
 if args.single:
     for target in targets:
-        fps, props, labels = load_smiles([target])
+        fps, props, labels = load_smiles([target], MW500=args.MW500)
         props = np.array(props)
         labels = np.array(labels)
         active_mask = labels == 1
@@ -361,3 +366,136 @@ if args.single:
         fig.savefig(target_output, dpi=300)
         plt.close(fig)  # remove warning about too many opened figures
         print(f"result figure saved at {target_output}")
+
+
+def count_bits(targets):
+    fps, _, labels = load_smiles(targets, MW500=args.MW500)
+    active_count = 0
+    decoy_count = 0
+    active_bits_count = np.zeros(512, dtype=int)
+    decoy_bits_count = np.zeros(512, dtype=int)
+    for fp, label in zip(fps, labels):
+        if label == 1:
+            active_count += 1
+            for bit in fp.GetOnBits():
+                active_bits_count[bit] += 1
+        else:
+            decoy_count += 1
+            for bit in fp.GetOnBits():
+                decoy_bits_count[bit] += 1
+    return (active_count, decoy_count, active_bits_count, decoy_bits_count)
+
+
+if args.feat_imports:
+    prop_data = []
+    prop_cols = ('file', 'fold_name', 'mwha', 'logp', 'rotb', 'hbd', 'hba',
+                 'q')
+    fp_data = []
+    top_n = 5
+    fp_cols = ('file', 'fold_name', *np.arange(top_n))
+    import_bits = set()
+    for feat_import_file in args.feat_imports:
+        feat_import_file = Path(feat_import_file)
+        results = json.load(open(feat_import_file))
+        repeat_results, repeat_means = results
+        repeat_result = repeat_results[0]
+        feature_sets = ('fp', 'prop')
+        folds = repeat_result['folds']
+        feat_set_imports = {
+            'fp': repeat_result['fp']['feature_importances'],
+            'prop': repeat_result['prop']['feature_importances']
+        }
+        feat_imports = feat_set_imports['prop']
+        fold_weights = np.array([len(i) for i in folds.values()])
+        # targets in folds is in test set, need number of targets in training set.
+        fold_weights = sum(fold_weights) - fold_weights
+        fold_weights = np.array(fold_weights) / sum(fold_weights)
+        fold_weights = fold_weights.reshape(-1, 1)
+        for fold_name, fold_feat_imports in zip(folds, feat_imports):
+            feat_percents = [f'{100*i:.2f}%' for i in fold_feat_imports]
+            prop_data.append(
+                [feat_import_file.stem, fold_name, *feat_percents])
+        mean_feat_imports = np.sum(feat_imports * fold_weights, axis=0)
+        feat_percents = [f'{100*i:.2f}%' for i in mean_feat_imports]
+        prop_data.append([feat_import_file.stem, 'mean', *feat_percents])
+        feat_imports = feat_set_imports['fp']
+        for fold_name, fold_feat_imports in zip(folds, feat_imports):
+            fold_feat_imports = np.array(fold_feat_imports)
+            sort_idx = np.argsort(-fold_feat_imports)[:top_n]
+            import_bits.update(sort_idx)
+            feat_percents = [
+                f'{i}({100*fold_feat_imports[i]:.2f}%)' for i in sort_idx
+            ]
+            fp_data.append([feat_import_file.stem, fold_name, *feat_percents])
+        mean_feat_imports = np.sum(feat_imports * fold_weights, axis=0)
+        sort_idx = np.argsort(-mean_feat_imports)[:top_n]
+        import_bits.update(sort_idx)
+        feat_percents = [
+            f'{i}({100*mean_feat_imports[i]:.2f}%)' for i in sort_idx
+        ]
+        fp_data.append([feat_import_file.stem, 'mean', *feat_percents])
+
+    df = pd.DataFrame(prop_data, columns=prop_cols)
+    csv = output.with_suffix('.prop_imports.csv')
+    df.to_csv(csv, index=False)
+    print(f"feature_importances saved at {csv}")
+    df = pd.DataFrame(fp_data, columns=fp_cols)
+    csv = output.with_suffix('.fp_imports.csv')
+    df.to_csv(csv, index=False)
+    print(f"feature_importances saved at {csv}")
+
+    print('counting fingerprint bits ...')
+    with mp.Pool() as p:
+        iter_targets = [[i] for i in targets]
+        counters = p.map(count_bits, iter_targets)
+
+    active_num = 0
+    decoy_num = 0
+    active_bits_count = np.zeros(512, dtype=int)
+    decoy_bits_count = np.zeros(512,dtype=int)
+    for c in counters:
+        active_num += c[0]
+        decoy_num += c[1]
+        active_bits_count += c[2]
+        decoy_bits_count += c[3]
+    active_bits_freq = active_bits_count / active_num
+    decoy_bits_freq = decoy_bits_count / decoy_num
+    bit_data = []
+    import_bits = sorted(import_bits)
+    for bit in import_bits:
+        freq_in_active = active_bits_freq[bit]
+        freq_in_decoy = decoy_bits_freq[bit]
+        bit_data.append((bit, freq_in_active, freq_in_decoy))
+    df = pd.DataFrame(bit_data,
+                      columns=['bit', 'freq_in_active', 'freq_in_decoy'])
+    csv = output.with_suffix('.import_bits.csv')
+    df.to_csv(csv, index=False)
+    print(f"important bits saved at {csv}")
+
+    from rdkit.Chem import Draw
+    
+    datadir = Path(args.datadir)
+    files = []
+    for t in targets:
+         files.append(datadir/ t / 'actives_final.mol2.gz')
+         files.append(datadir/ t / 'decoys_final.mol2.gz')
+    
+    bit_example_path = output.with_suffix('.bit_examples')
+    bit_example_path.mkdir(exist_ok=True)
+    for bit in import_bits:
+        bit_examples = []
+        for i in range(9):
+            file_name = np.random.choice(files)
+            with gzip.open(file_name) as f:
+                for m in ForwardMol2MolSupplier(f):
+                    m = Chem.MolFromSmiles(Chem.MolToSmiles(m))
+                    info = {}
+                    fp = AllChem.GetMorganFingerprintAsBitVect(m, 2, nBits=512, bitInfo=info)
+                    if bit in set(fp.GetOnBits()):
+                        bit_examples.append((m, bit, info))
+                        break
+        # http://rdkit.blogspot.com/2018/10/using-new-fingerprint-bit-rendering-code.html
+        svg_text = Draw.DrawMorganBits(bit_examples, molsPerRow=3) # legends = []
+        svg_file = bit_example_path / f"bit{bit:03d}_example.svg"
+        svg_file.write_text(svg_text)
+        

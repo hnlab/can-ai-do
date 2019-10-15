@@ -91,7 +91,7 @@ def ForwardMol2MolSupplier(file_obj, sanitize=True):
     file_obj.close()
 
 
-def load_smiles(names, MolWt=None, MW500=False):
+def load_smiles(names, MolWt=None, MW500=False, fpAsArray=False, bits=None):
     datadir = Path(args.datadir)
     all_fps = []
     all_props = []
@@ -197,13 +197,37 @@ def load_smiles(names, MolWt=None, MW500=False):
             with open(labelf_mw500, 'wb') as f:
                 pickle.dump(labels_mw500, f)
 
+            for file_name, fps_list in ((fpf, fps), (fpf_mw500, fps_mw500)):
+                fpf_np = file_name.with_suffix('.np.pkl')
+                fps_np = []
+                for fp in fps_list:
+                    fp_np = np.zeros((0, ), dtype=np.int8)
+                    # faster, https://github.com/rdkit/rdkit/pull/2557
+                    DataStructs.ConvertToNumpyArray(fp, fp_np)
+                    fps_np.append(fp_np)
+                fps_np = np.array(fps_np, dtype=np.int8)
+                with open(fpf_np, 'wb') as f:
+                    pickle.dump(fps_np, f)
+
         if MW500:
             fpf = fpf_mw500
             propf = propf_mw500
             labelf = labelf_mw500
 
-        with open(fpf, 'rb') as f:
-            fps = pickle.load(f)
+        if bits is not None:
+            fpAsArrays = True
+
+        if fpAsArray:
+            fpf_np = fpf.with_suffix('.np.pkl')
+            with open(fpf_np, 'rb') as f:
+                fps = pickle.load(f)
+        else:
+            with open(fpf, 'rb') as f:
+                fps = pickle.load(f)
+
+        if bits is not None:
+            fps = fps[:, bits]
+
         with open(propf, 'rb') as f:
             props = pickle.load(f)
         with open(labelf, 'rb') as f:
@@ -431,6 +455,13 @@ jpg = output.with_suffix(f'.bits_freq_vs_factor.jpg')
 fig.savefig(jpg, dpi=300)
 plt.close(fig)
 print(f"bits freq vs factor saved at {jpg}")
+
+significant_bits = high_freq_idx[(np.abs(bits_factor) >= 1)
+                                 & (mean_high_freq >= 0.01)]
+jsonf = output.with_suffix(f'.significant_bits.json')
+with open(jsonf, 'w') as f:
+    json.dump(significant_bits.tolist(), f)
+print(f"significant_bits saved at {jsonf}")
 
 if args.feat_imports:
     prop_data = []

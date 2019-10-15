@@ -49,6 +49,7 @@ parser.add_argument('--random_fold',
 parser.add_argument('--MW500',
                     action='store_true',
                     help="remove actives with HeavyAtomMolWt > 500.")
+parser.add_argument('--bits', help='only using FP bits in the json file.')
 parser.add_argument(
     '-o',
     '--output',
@@ -63,7 +64,13 @@ if args.use_MW:
 else:
     args.MolWt = 'HeavyAtomMolWt'
 
+if args.bits:
+    with open(args.bits) as f:
+        args.bits = json.load(f)
+    print(f"only using {len(args.bits)} FP bits {args.bits}")
+
 nBits = 2048
+
 
 def mfp2(m):
     # radius 2 MorganFingerprint equal ECFP4
@@ -99,7 +106,7 @@ def ForwardMol2MolSupplier(file_obj, sanitize=True):
     file_obj.close()
 
 
-def load_smiles(names, MolWt=None, MW500=False):
+def load_smiles(names, MolWt=None, MW500=False, fpAsArray=False, bits=None):
     datadir = Path(args.datadir)
     all_fps = []
     all_props = []
@@ -205,13 +212,37 @@ def load_smiles(names, MolWt=None, MW500=False):
             with open(labelf_mw500, 'wb') as f:
                 pickle.dump(labels_mw500, f)
 
+            for file_name, fps_list in ((fpf, fps), (fpf_mw500, fps_mw500)):
+                fpf_np = file_name.with_suffix('.np.pkl')
+                fps_np = []
+                for fp in fps_list:
+                    fp_np = np.zeros((0, ), dtype=np.int8)
+                    # faster, https://github.com/rdkit/rdkit/pull/2557
+                    DataStructs.ConvertToNumpyArray(fp, fp_np)
+                    fps_np.append(fp_np)
+                fps_np = np.array(fps_np, dtype=np.int8)
+                with open(fpf_np, 'wb') as f:
+                    pickle.dump(fps_np, f)
+
         if MW500:
             fpf = fpf_mw500
             propf = propf_mw500
             labelf = labelf_mw500
 
-        with open(fpf, 'rb') as f:
-            fps = pickle.load(f)
+        if bits is not None:
+            fpAsArrays = True
+
+        if fpAsArray:
+            fpf_np = fpf.with_suffix('.np.pkl')
+            with open(fpf_np, 'rb') as f:
+                fps = pickle.load(f)
+        else:
+            with open(fpf, 'rb') as f:
+                fps = pickle.load(f)
+
+        if bits is not None:
+            fps = fps[:, bits]
+
         with open(propf, 'rb') as f:
             props = pickle.load(f)
         with open(labelf, 'rb') as f:
@@ -245,6 +276,8 @@ def random_forest(train_test):
     train_names, test_names = train_test
     train_fps, train_props, train_labels = load_smiles(train_names,
                                                        MolWt=args.MolWt,
+                                                       fpAsArray=True,
+                                                       bits=args.bits,
                                                        MW500=args.MW500)
     XY = {'fp': (train_fps, train_labels), 'prop': (train_props, train_labels)}
     # XY = {'prop': (train_props, train_labels)}
@@ -269,6 +302,8 @@ def random_forest(train_test):
         for test_name in test_names:
             test_fps, test_props, test_labels = load_smiles([test_name],
                                                             MolWt=args.MolWt,
+                                                            fpAsArray=True,
+                                                            bits=args.bits,
                                                             MW500=args.MW500)
             if key == 'fp':
                 test_X = test_fps

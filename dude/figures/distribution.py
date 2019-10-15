@@ -54,10 +54,12 @@ parser.add_argument(
     help="random forest results in .json format having feature_importances")
 args = parser.parse_args()
 
+nBits = 2048
+
 
 def mfp2(m):
     # radius 2 MorganFingerprint equal ECFP4
-    fp = AllChem.GetMorganFingerprintAsBitVect(m, 2, nBits=512)
+    fp = AllChem.GetMorganFingerprintAsBitVect(m, 2, nBits=nBits)
     return fp
 
 
@@ -372,8 +374,8 @@ def count_bits(targets):
     fps, _, labels = load_smiles(targets, MW500=args.MW500)
     active_count = 0
     decoy_count = 0
-    active_bits_count = np.zeros(512, dtype=int)
-    decoy_bits_count = np.zeros(512, dtype=int)
+    active_bits_count = np.zeros(nBits, dtype=int)
+    decoy_bits_count = np.zeros(nBits, dtype=int)
     for fp, label in zip(fps, labels):
         if label == 1:
             active_count += 1
@@ -451,8 +453,8 @@ if args.feat_imports:
 
     active_num = 0
     decoy_num = 0
-    active_bits_count = np.zeros(512, dtype=int)
-    decoy_bits_count = np.zeros(512,dtype=int)
+    active_bits_count = np.zeros(nBits, dtype=int)
+    decoy_bits_count = np.zeros(nBits, dtype=int)
     for c in counters:
         active_num += c[0]
         decoy_num += c[1]
@@ -473,29 +475,38 @@ if args.feat_imports:
     print(f"important bits saved at {csv}")
 
     from rdkit.Chem import Draw
-    
+
     datadir = Path(args.datadir)
     files = []
     for t in targets:
-         files.append(datadir/ t / 'actives_final.mol2.gz')
-         files.append(datadir/ t / 'decoys_final.mol2.gz')
-    
+        files.append(datadir / t / 'actives_final.mol2.gz')
+        files.append(datadir / t / 'decoys_final.mol2.gz')
+
     bit_example_path = output.with_suffix('.bit_examples')
     bit_example_path.mkdir(exist_ok=True)
     for bit in import_bits:
         bit_examples = []
-        for i in range(9):
-            file_name = np.random.choice(files)
+        example_count = 0
+        for file_name in np.random.permutation(files):
+            if example_count >= 9:
+                break
             with gzip.open(file_name) as f:
                 for m in ForwardMol2MolSupplier(f):
+                    if m is None:
+                        continue
                     m = Chem.MolFromSmiles(Chem.MolToSmiles(m))
                     info = {}
-                    fp = AllChem.GetMorganFingerprintAsBitVect(m, 2, nBits=512, bitInfo=info)
+                    fp = AllChem.GetMorganFingerprintAsBitVect(m,
+                                                               2,
+                                                               nBits=nBits,
+                                                               bitInfo=info)
                     if bit in set(fp.GetOnBits()):
                         bit_examples.append((m, bit, info))
+                        example_count += 1
                         break
+
         # http://rdkit.blogspot.com/2018/10/using-new-fingerprint-bit-rendering-code.html
-        svg_text = Draw.DrawMorganBits(bit_examples, molsPerRow=3) # legends = []
-        svg_file = bit_example_path / f"bit{bit:03d}_example.svg"
+        svg_text = Draw.DrawMorganBits(bit_examples,
+                                       molsPerRow=3)  # legends = []
+        svg_file = bit_example_path / f"bit{bit:04d}_example.svg"
         svg_file.write_text(svg_text)
-        

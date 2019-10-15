@@ -63,10 +63,11 @@ if args.use_MW:
 else:
     args.MolWt = 'HeavyAtomMolWt'
 
+nBits = 2048
 
 def mfp2(m):
     # radius 2 MorganFingerprint equal ECFP4
-    fp = AllChem.GetMorganFingerprintAsBitVect(m, 2, nBits=512)
+    fp = AllChem.GetMorganFingerprintAsBitVect(m, 2, nBits=nBits)
     return fp
 
 

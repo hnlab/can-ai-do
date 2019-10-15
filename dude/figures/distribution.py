@@ -388,6 +388,50 @@ def count_bits(targets):
     return (active_count, decoy_count, active_bits_count, decoy_bits_count)
 
 
+print('counting fingerprint bits ...')
+with mp.Pool() as p:
+    iter_targets = [[i] for i in targets]
+    counters = p.map(count_bits, iter_targets)
+
+active_num = 0
+decoy_num = 0
+active_bits_count = np.zeros(nBits, dtype=int)
+decoy_bits_count = np.zeros(nBits, dtype=int)
+for c in counters:
+    active_num += c[0]
+    decoy_num += c[1]
+    active_bits_count += c[2]
+    decoy_bits_count += c[3]
+active_bits_freq = active_bits_count / active_num
+decoy_bits_freq = decoy_bits_count / decoy_num
+
+high_freq_idx = np.flatnonzero(decoy_bits_freq >= 1 / nBits)
+mean_freq = (active_bits_freq + decoy_bits_freq) / 2
+mean_high_freq = mean_freq[high_freq_idx]
+bits_factor = active_bits_freq[high_freq_idx] / decoy_bits_freq[high_freq_idx]
+bits_factor = np.log2(bits_factor)
+
+fig, ax = plt.subplots()
+sns.distplot(
+    bits_factor,
+    # bins=bins,
+    kde=False,
+    norm_hist=True,
+    # color='blue',
+    # hist_kws=hist_kws,
+    ax=ax)
+jpg = output.with_suffix(f'.bits_factor.jpg')
+fig.savefig(jpg, dpi=300)
+plt.close(fig)
+print(f"bits factor distribution saved at {jpg}")
+
+fig, ax = plt.subplots()
+ax.scatter(bits_factor, mean_high_freq)
+jpg = output.with_suffix(f'.bits_freq_vs_factor.jpg')
+fig.savefig(jpg, dpi=300)
+plt.close(fig)
+print(f"bits freq vs factor saved at {jpg}")
+
 if args.feat_imports:
     prop_data = []
     prop_cols = ('file', 'fold_name', 'mwha', 'logp', 'rotb', 'hbd', 'hba',
@@ -446,22 +490,6 @@ if args.feat_imports:
     df.to_csv(csv, index=False)
     print(f"feature_importances saved at {csv}")
 
-    print('counting fingerprint bits ...')
-    with mp.Pool() as p:
-        iter_targets = [[i] for i in targets]
-        counters = p.map(count_bits, iter_targets)
-
-    active_num = 0
-    decoy_num = 0
-    active_bits_count = np.zeros(nBits, dtype=int)
-    decoy_bits_count = np.zeros(nBits, dtype=int)
-    for c in counters:
-        active_num += c[0]
-        decoy_num += c[1]
-        active_bits_count += c[2]
-        decoy_bits_count += c[3]
-    active_bits_freq = active_bits_count / active_num
-    decoy_bits_freq = decoy_bits_count / decoy_num
     bit_data = []
     import_bits = sorted(import_bits)
     for bit in import_bits:
@@ -491,10 +519,13 @@ if args.feat_imports:
             if example_count >= 9:
                 break
             with gzip.open(file_name) as f:
-                for m in ForwardMol2MolSupplier(f):
+                for m in ForwardMol2MolSupplier(f):  # not Kekulize
                     if m is None:
                         continue
+                    # remove 3D info for Draw Bits, may fail for Kekulize
                     m = Chem.MolFromSmiles(Chem.MolToSmiles(m))
+                    if m is None:
+                        continue
                     info = {}
                     fp = AllChem.GetMorganFingerprintAsBitVect(m,
                                                                2,

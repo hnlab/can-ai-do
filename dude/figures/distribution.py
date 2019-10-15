@@ -29,6 +29,10 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+from rdkit.Chem import Draw
+from rdkit.Chem import PandasTools
+PandasTools.RenderImagesInAllDataFrames(images=True)
+
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('-f',
                     '--fold_list',
@@ -393,75 +397,145 @@ if args.single:
         plt.close(fig)  # remove warning about too many opened figures
         print(f"result figure saved at {target_output}")
 
-
-def count_bits(targets):
-    fps, _, labels = load_smiles(targets, MW500=args.MW500)
-    active_count = 0
-    decoy_count = 0
-    active_bits_count = np.zeros(nBits, dtype=int)
-    decoy_bits_count = np.zeros(nBits, dtype=int)
-    for fp, label in zip(fps, labels):
-        if label == 1:
-            active_count += 1
-            for bit in fp.GetOnBits():
-                active_bits_count[bit] += 1
-        else:
-            decoy_count += 1
-            for bit in fp.GetOnBits():
-                decoy_bits_count[bit] += 1
-    return (active_count, decoy_count, active_bits_count, decoy_bits_count)
-
-
 print('counting fingerprint bits ...')
-with mp.Pool() as p:
-    iter_targets = [[i] for i in targets]
-    counters = p.map(count_bits, iter_targets)
-
-active_num = 0
-decoy_num = 0
-active_bits_count = np.zeros(nBits, dtype=int)
-decoy_bits_count = np.zeros(nBits, dtype=int)
-for c in counters:
-    active_num += c[0]
-    decoy_num += c[1]
-    active_bits_count += c[2]
-    decoy_bits_count += c[3]
-active_bits_freq = active_bits_count / active_num
-decoy_bits_freq = decoy_bits_count / decoy_num
-
-high_freq_idx = np.flatnonzero(decoy_bits_freq >= 1 / nBits)
+fps, probe, labels = load_smiles(targets, MW500=args.MW500, fpAsArray=True)
+fps = np.asarray(fps)
+labels = np.asarray(labels)
+active_fps = fps[labels == 1]
+decoy_fps = fps[labels == 0]
+active_bits_freq = active_fps.sum(axis=0) / len(active_fps)
+decoy_bits_freq = decoy_fps.sum(axis=0) / len(decoy_fps)
+bits_factor = np.divide(active_bits_freq,
+                        decoy_bits_freq,
+                        out=np.zeros(nBits),
+                        where=decoy_bits_freq != 0)
+bits_factor = np.log2(bits_factor, out=np.zeros(nBits), where=bits_factor != 0)
 mean_freq = (active_bits_freq + decoy_bits_freq) / 2
-mean_high_freq = mean_freq[high_freq_idx]
-bits_factor = active_bits_freq[high_freq_idx] / decoy_bits_freq[high_freq_idx]
-bits_factor = np.log2(bits_factor)
 
-fig, ax = plt.subplots()
-sns.distplot(
-    bits_factor,
-    # bins=bins,
-    kde=False,
-    norm_hist=True,
-    # color='blue',
-    # hist_kws=hist_kws,
-    ax=ax)
-jpg = output.with_suffix(f'.bits_factor.jpg')
-fig.savefig(jpg, dpi=300)
-plt.close(fig)
-print(f"bits factor distribution saved at {jpg}")
+freq_cutoff = 0.03
+factor_cutoff = 1
+freq_mask = mean_freq >= freq_cutoff
+pos_mask = bits_factor >= factor_cutoff
+neg_mask = bits_factor <= -factor_cutoff
+factor_mask = pos_mask | neg_mask
+sign_mask = freq_mask & factor_mask
 
+sizes = np.array([4 for i in bits_factor])
+sizes[sign_mask] = 16
+colors = np.array(['black' for i in bits_factor])
+colors[freq_mask & pos_mask] = 'red'
+colors[freq_mask & neg_mask] = 'blue'
 fig, ax = plt.subplots()
-ax.scatter(bits_factor, mean_high_freq)
+ax.vlines(factor_cutoff, -1, 1, colors='gray', zorder=1)
+ax.vlines(-factor_cutoff, -1, 1, colors='gray', zorder=1)
+ax.hlines(freq_cutoff, -6, 6, colors='gray', zorder=1)
+ax.scatter(bits_factor, mean_freq, s=sizes, c=colors, zorder=2)
+ax.set_xlim(-5, 5)
+ax.set_xticks(np.linspace(-4, 4, 9))
+ax.set_ylim(-0.02, 1)
+ax.set_yticks(np.append(np.linspace(0, 1, 6), freq_cutoff))
+ax.set_xlabel('log2(active_bit_freq / decoy_bit_freq)')
+ax.set_ylabel('(active_bit_freq + decoy_bit_freq) / 2')
 jpg = output.with_suffix(f'.bits_freq_vs_factor.jpg')
 fig.savefig(jpg, dpi=300)
-plt.close(fig)
+ax.set_ylim(-0.02, 0.3)
+ax.set_yticks(np.append(np.linspace(0, 0.3, 4), freq_cutoff))
 print(f"bits freq vs factor saved at {jpg}")
+jpg = output.with_suffix(f'.bits_freq0.4_vs_factor.jpg')
+fig.savefig(jpg, dpi=300)
+print(f"bits freq vs factor saved at {jpg}")
+plt.close(fig)
 
-significant_bits = high_freq_idx[(np.abs(bits_factor) >= 1)
-                                 & (mean_high_freq >= 0.01)]
+significant_bits = np.flatnonzero(sign_mask)
 jsonf = output.with_suffix(f'.significant_bits.json')
 with open(jsonf, 'w') as f:
     json.dump(significant_bits.tolist(), f)
-print(f"significant_bits saved at {jsonf}")
+print(f"{len(significant_bits)} significant bits saved at {jsonf}")
+
+datadir = Path(args.datadir)
+mol2_files = []
+for t in targets:
+    mol2_files.append(datadir / t / 'actives_final.mol2.gz')
+    mol2_files.append(datadir / t / 'decoys_final.mol2.gz')
+
+bits_data = []
+np.random.seed(123)
+for bit in tqdm(significant_bits, desc='bits example'):
+    bit_examples = []
+    example_count = 0
+    for file_name in np.random.permutation(mol2_files):
+        if example_count >= 4:
+            break
+        with gzip.open(file_name) as f:
+            for m in ForwardMol2MolSupplier(f):  # not Kekulize
+                if m is None:
+                    continue
+                # remove 3D info for Draw Bits, may fail for Kekulize
+                m = Chem.MolFromSmiles(Chem.MolToSmiles(m))
+                if m is None:
+                    continue
+                info = {}
+                fp = AllChem.GetMorganFingerprintAsBitVect(m,
+                                                           2,
+                                                           nBits=nBits,
+                                                           bitInfo=info)
+                if bit in set(fp.GetOnBits()):
+                    bit_examples.append((m, bit, info))
+                    example_count += 1
+                    break
+    # http://rdkit.blogspot.com/2018/10/using-new-fingerprint-bit-rendering-code.html
+    examples_svg = [Draw.DrawMorganBit(*i) for i in bit_examples]
+    # remove two '\n' at the start and end of svg
+    examples_svg = [i.strip() for i in examples_svg]
+    examples_svg = [i.replace('\n<svg', '<svg') for i in examples_svg]
+    bits_data.append((bit, bits_factor[bit], active_bits_freq[bit],
+                      decoy_bits_freq[bit], *examples_svg))
+svg_cols = [f'example_{i+1}' for i in range(4)]
+cols = ['Bit', 'log2(FC)', 'Active_Freq', 'Decoy_Freq', *svg_cols]
+df = pd.DataFrame(bits_data, columns=cols)
+df = df.sort_values(by='log2(FC)', ascending=False)
+df = df.reset_index(drop=True)
+df['log2(FC)'] = [f'{i:.1f}' for i in df['log2(FC)']]
+df['Active_Freq'] = [f'{100*i:.1f}%' for i in df['Active_Freq']]
+df['Decoy_Freq'] = [f'{100*i:.1f}%' for i in df['Decoy_Freq']]
+html_file = output.with_suffix(".bits_example.html")
+
+# https://stackoverflow.com/questions/50807744/apply-css-class-to-pandas-dataframe-using-to-html/50939211
+style = """
+/* includes alternating gray and white with on-hover color */
+svg { 
+    width: 150px;
+    height: 150px;
+    display: block;
+}
+.dataframe {
+    font-size: 11pt; 
+    font-family: Arial;
+    /* border-collapse: collapse; */
+    border: 1px solid silver;
+
+}
+.dataframe td, th {
+    text-align: right;
+    padding: 2px;
+}
+.dataframe tr:nth-child(even) {
+    background: #E0E0E0;
+}
+.dataframe tr:hover {
+    background: silver;
+    cursor: pointer;
+}
+"""
+table = df.to_html()
+with open(html_file, 'w') as f:
+    f.write(f'<html>\n'
+            f'<head><title>HTML Pandas Dataframe with CSS</title>\n'
+            f'<style>{style}</style>\n'
+            f'</head>\n'
+            f'<body>\n{table}\n</body>\n'
+            f'</html>')
+print(f'bits example saved at {html_file}')
 
 if args.feat_imports:
     prop_data = []
@@ -520,55 +594,3 @@ if args.feat_imports:
     csv = output.with_suffix('.fp_imports.csv')
     df.to_csv(csv, index=False)
     print(f"feature_importances saved at {csv}")
-
-    bit_data = []
-    import_bits = sorted(import_bits)
-    for bit in import_bits:
-        freq_in_active = active_bits_freq[bit]
-        freq_in_decoy = decoy_bits_freq[bit]
-        bit_data.append((bit, freq_in_active, freq_in_decoy))
-    df = pd.DataFrame(bit_data,
-                      columns=['bit', 'freq_in_active', 'freq_in_decoy'])
-    csv = output.with_suffix('.import_bits.csv')
-    df.to_csv(csv, index=False)
-    print(f"important bits saved at {csv}")
-
-    from rdkit.Chem import Draw
-
-    datadir = Path(args.datadir)
-    files = []
-    for t in targets:
-        files.append(datadir / t / 'actives_final.mol2.gz')
-        files.append(datadir / t / 'decoys_final.mol2.gz')
-
-    bit_example_path = output.with_suffix('.bit_examples')
-    bit_example_path.mkdir(exist_ok=True)
-    for bit in import_bits:
-        bit_examples = []
-        example_count = 0
-        for file_name in np.random.permutation(files):
-            if example_count >= 9:
-                break
-            with gzip.open(file_name) as f:
-                for m in ForwardMol2MolSupplier(f):  # not Kekulize
-                    if m is None:
-                        continue
-                    # remove 3D info for Draw Bits, may fail for Kekulize
-                    m = Chem.MolFromSmiles(Chem.MolToSmiles(m))
-                    if m is None:
-                        continue
-                    info = {}
-                    fp = AllChem.GetMorganFingerprintAsBitVect(m,
-                                                               2,
-                                                               nBits=nBits,
-                                                               bitInfo=info)
-                    if bit in set(fp.GetOnBits()):
-                        bit_examples.append((m, bit, info))
-                        example_count += 1
-                        break
-
-        # http://rdkit.blogspot.com/2018/10/using-new-fingerprint-bit-rendering-code.html
-        svg_text = Draw.DrawMorganBits(bit_examples,
-                                       molsPerRow=3)  # legends = []
-        svg_file = bit_example_path / f"bit{bit:04d}_example.svg"
-        svg_file.write_text(svg_text)

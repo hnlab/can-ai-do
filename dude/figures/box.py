@@ -56,14 +56,14 @@ sns.boxplot(
 )
 
 ax.set_xlabel('')
-ax.set_ylabel('EF1%')
+ax.set_ylabel('$EF_1$')
 ax.set_ylim([-11, 52])
 ax.set_yticks(np.linspace(0, 50, 6))
-ax2.set_ylabel('AUC')
+ax2.set_ylabel('$AUC$')
 ax2.set_ylim([0.39, 1.02])
 ax2.set_yticks(np.linspace(0.5, 1, 6))
 
-ax.set_title("PROP+RF performance on DUD-E (102 targets)")
+ax.set_title("PROP+RF Performance on DUD-E (102 Targets)")
 
 
 # https://github.com/0ut0fcontrol/seaborn/blob/master/seaborn/categorical.py
@@ -78,8 +78,8 @@ def add_legend_data(ax, color, label):
     ax.add_patch(rect)
 
 
-add_legend_data(ax, colors[0], 'EF1%')
-add_legend_data(ax, colors[1], 'AUC')
+add_legend_data(ax, colors[0], '$EF_1$')
+add_legend_data(ax, colors[1], '$AUC$')
 ax.legend(frameon=False, loc='lower center', ncol=2)
 fig.savefig(root / 'PROP.jpg', dpi=300)
 
@@ -116,14 +116,14 @@ sns.boxplot(
 )
 
 ax.set_xlabel('')
-ax.set_ylabel('EF1%')
+ax.set_ylabel('$EF_1$')
 ax.set_ylim([-11, 52])
 ax.set_yticks(np.linspace(0, 50, 6))
-ax2.set_ylabel('AUC')
+ax2.set_ylabel('$AUC$')
 ax2.set_ylim([0.39, 1.02])
 ax2.set_yticks(np.linspace(0.5, 1, 6))
 
-ax.set_title("FP+RF performance on DUD-E (102 targets)")
+ax.set_title("FP+RF Performance on DUD-E (102 Targets)")
 
 
 # https://github.com/0ut0fcontrol/seaborn/blob/master/seaborn/categorical.py
@@ -138,8 +138,8 @@ def add_legend_data(ax, color, label):
     ax.add_patch(rect)
 
 
-add_legend_data(ax, colors[0], 'EF1%')
-add_legend_data(ax, colors[1], 'AUC')
+add_legend_data(ax, colors[0], '$EF_1$')
+add_legend_data(ax, colors[1], '$AUC$')
 ax.legend(frameon=False, loc='lower center', ncol=2)
 fig.savefig(root / 'FP.jpg', dpi=300)
 

@@ -446,11 +446,13 @@ fig.savefig(jpg, dpi=300)
 print(f"bits freq vs factor saved at {jpg}")
 plt.close(fig)
 
-significant_bits = np.flatnonzero(sign_mask)
-jsonf = output.with_suffix(f'.significant_bits.json')
-with open(jsonf, 'w') as f:
-    json.dump(significant_bits.tolist(), f)
-print(f"{len(significant_bits)} significant bits saved at {jsonf}")
+df = pd.DataFrame(
+    list(zip(bits_factor, mean_freq, active_bits_freq, decoy_bits_freq)),
+    columns=['log2_FC', 'mean_freq', 'active_freq', 'decoy_freq'])
+csv = output.with_suffix(f'.bits_freq.csv')
+with open(csv, 'w') as f:
+    df.to_csv(f, index=False)
+print(f"bits data saved at {csv}")
 
 datadir = Path(args.datadir)
 mol2_files = []
@@ -460,6 +462,7 @@ for t in targets:
 
 bits_data = []
 np.random.seed(123)
+significant_bits = np.flatnonzero(sign_mask)
 for bit in tqdm(significant_bits, desc='bits example'):
     bit_examples = []
     example_count = 0

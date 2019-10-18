@@ -56,6 +56,10 @@ parser.add_argument(
     '--feat_imports',
     nargs='+',
     help="random forest results in .json format having feature_importances")
+parser.add_argument(
+    '--zinc',
+    required=True,
+    help='ZINC .smi from http://zinc12.docking.org/db/bysubset/6/6_p0.smi.gz')
 args = parser.parse_args()
 
 nBits = 2048
@@ -397,7 +401,52 @@ if args.single:
         plt.close(fig)  # remove warning about too many opened figures
         print(f"result figure saved at {target_output}")
 
-print('counting fingerprint bits ...')
+
+def smiles2fp(line):
+    smiles, name, *_ = line.split()
+    m = Chem.MolFromSmiles(smiles)
+    if m is None:
+        return None
+    fp = mfp2(m)
+    return fp
+
+
+zinc = Path(args.zinc)
+zinc_freq_file = zinc.with_suffix('.bits_freq.json')
+if zinc_freq_file.exists():
+    with open(zinc_freq_file) as f:
+        zinc_freq = json.load(f)
+    print(f'load zinc frequency from {zinc_freq_file}')
+else:
+    # http://rdkit.blogspot.com/2016/02/morgan-fingerprint-bit-statistics.html
+    freq = [0 for i in range(nBits)]
+    vaild_count = 0
+    with open(args.zinc) as f:
+        total = sum(1 for line in f)
+    pbar = tqdm(desc='count ZINC bits freq', total=total, unit=' mol')
+    with open(args.zinc) as f:
+        # 5000000 chars about 100000 lines
+        nchar = 5000000
+        lines = f.readlines(nchar)
+        while lines:
+            with mp.Pool() as p:
+                fps = p.map(smiles2fp, lines)
+            for fp in fps:
+                if fp is None:
+                    continue
+                vaild_count += 1
+                for i in fp.GetOnBits():
+                    freq[i] += 1
+            pbar.update(len(lines))
+            lines = f.readlines(nchar)
+    pbar.close()
+
+    zinc_freq = np.array(freq) / vaild_count
+    with open(zinc_freq_file, 'w') as f:
+        json.dump(zinc_freq.tolist(), f)
+    print(f'zinc freq saved to {zinc_freq_file}')
+
+print('counting DUD-E fingerprint bits ...')
 fps, probe, labels = load_smiles(targets, MW500=args.MW500, fpAsArray=True)
 fps = np.asarray(fps)
 labels = np.asarray(labels)
@@ -446,13 +495,55 @@ fig.savefig(jpg, dpi=300)
 print(f"bits freq vs factor saved at {jpg}")
 plt.close(fig)
 
-df = pd.DataFrame(
-    list(zip(bits_factor, mean_freq, active_bits_freq, decoy_bits_freq)),
-    columns=['log2_FC', 'mean_freq', 'active_freq', 'decoy_freq'])
+data = list(
+    zip(range(nBits), zinc_freq, bits_factor, mean_freq, active_bits_freq,
+        decoy_bits_freq))
+cols = [
+    'bit', 'zinc_freq', 'log2_FC', 'mean_freq', 'active_freq', 'decoy_freq'
+]
+df = pd.DataFrame(data, columns=cols)
+df = df.sort_values(by='zinc_freq', ascending=False)
+df = df.reset_index(drop=True)
 csv = output.with_suffix(f'.bits_freq.csv')
 with open(csv, 'w') as f:
     df.to_csv(f, index=False)
 print(f"bits data saved at {csv}")
+
+fig, ax = plt.subplots(figsize=(8, 6))
+ax.scatter(df.index, df.active_freq, color='red', label='Actives', marker='+')
+ax.scatter(df.index, df.decoy_freq, color='blue', label='Decoys', marker='+')
+ax.scatter(df.index, df.zinc_freq, color='black', label='ZINC', marker='+')
+# ax.legend()
+ax.set_ylim([-0.05, 1.05])
+ax.set_xlabel('2048 bits of Morgan Fingerprint sorted by frequency in ZINC')
+ax.set_ylabel('frequency')
+ax2 = fig.add_axes([0.29, 0.365, 0.6, 0.5])
+ax2.scatter(df.index, df.active_freq, color='red', label='Actives', marker='+')
+ax2.scatter(df.index, df.decoy_freq, color='blue', label='Decoys', marker='+')
+ax2.scatter(df.index, df.zinc_freq, color='black', label='ZINC', marker='+')
+ax2.legend()
+ax2.set_ylim([-0.005, 0.1])
+jpg = output.with_suffix('.all_bits_vs_zinc.jpg')
+fig.savefig(jpg, dpi=300)
+print(f'all bits saved to {jpg}')
+
+df = df.loc[(df.mean_freq >= 0.03) & (np.abs(df.log2_FC) >= 1)]
+df = df.reset_index(drop=True)
+fig, ax = plt.subplots(figsize=(8, 6))
+for i, (lower, upper) in enumerate(zip(df.active_freq, df.decoy_freq)):
+    if lower > upper:
+        lower, upper = upper, lower
+    ax.vlines(i, lower, upper, colors='silver', zorder=0)
+ax.scatter(df.index, df.active_freq, color='red', label='Actives', marker='+')
+ax.scatter(df.index, df.decoy_freq, color='blue', label='Decoys', marker='+')
+ax.scatter(df.index, df.zinc_freq, color='black', label='ZINC', marker='+')
+ax.set_xlabel(f'{len(df)} high frequency and change significant bits in DUD-E')
+ax.set_ylabel('frequency')
+ax.set_xticks([i * 5 for i in range(int(len(df) / 5) + 1)])
+ax.legend()
+jpg = output.with_suffix('.significant_bits_vs_zinc.jpg')
+fig.savefig(jpg, dpi=300)
+print(f'significant bits plot saved to {jpg}')
 
 datadir = Path(args.datadir)
 mol2_files = []
@@ -462,12 +553,13 @@ for t in targets:
 
 bits_data = []
 np.random.seed(123)
-significant_bits = np.flatnonzero(sign_mask)
-for bit in tqdm(significant_bits, desc='bits example'):
+n_example = 4
+bits_examples = [[] for i in range(n_example)]
+for bit in tqdm(df.bit, desc='bits example'):
     bit_examples = []
     example_count = 0
     for file_name in np.random.permutation(mol2_files):
-        if example_count >= 4:
+        if example_count >= n_example:
             break
         with gzip.open(file_name) as f:
             for m in ForwardMol2MolSupplier(f):  # not Kekulize
@@ -491,18 +583,20 @@ for bit in tqdm(significant_bits, desc='bits example'):
     # remove two '\n' at the start and end of svg
     examples_svg = [i.strip() for i in examples_svg]
     examples_svg = [i.replace('\n<svg', '<svg') for i in examples_svg]
-    bits_data.append((bit, bits_factor[bit], active_bits_freq[bit],
-                      decoy_bits_freq[bit], *examples_svg))
-svg_cols = [f'example_{i+1}' for i in range(4)]
-cols = ['Bit', 'log2(FC)', 'Active_Freq', 'Decoy_Freq', *svg_cols]
-df = pd.DataFrame(bits_data, columns=cols)
-df = df.sort_values(by='log2(FC)', ascending=False)
-df = df.reset_index(drop=True)
-df['log2(FC)'] = [f'{i:.1f}' for i in df['log2(FC)']]
-df['Active_Freq'] = [f'{100*i:.1f}%' for i in df['Active_Freq']]
-df['Decoy_Freq'] = [f'{100*i:.1f}%' for i in df['Decoy_Freq']]
-html_file = output.with_suffix(".bits_example.html")
+    for list_, svg in zip(bits_examples, examples_svg):
+        list_.append(svg)
 
+svg_cols = [f'example_{i+1}' for i in range(4)]
+for col, list_ in zip(svg_cols, bits_examples):
+    df[col] = list_
+df = df.sort_values(by='zinc_freq', ascending=False)
+df = df.reset_index(drop=True)
+df['bit'] = [f'bit:<br>{i}' for i in df['bit']]
+df['log2_FC'] = [f'log2(FC):<br>{i:.2f}' for i in df['log2_FC']]
+for col in ['active_freq', 'decoy_freq', 'mean_freq', 'zinc_freq']:
+    df[col] = [f'{col}:<br>{100*i:.1f}%' for i in df[col]]
+
+html_file = output.with_suffix(".bits_example.html")
 # https://stackoverflow.com/questions/50807744/apply-css-class-to-pandas-dataframe-using-to-html/50939211
 style = """
 /* includes alternating gray and white with on-hover color */

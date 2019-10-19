@@ -21,21 +21,22 @@ df.tail()
 
 #%%
 components = ['binding', 'ligand', 'protein']
-cpn_names = ['binding complexes', 'ligands alone', 'proteins alone']
+cpn_names = ['Binding Complexes', 'Ligands Alone', 'Proteins Alone']
 subsets = ['core', 'refined', 'general_PL']
+subset_names = ['Core', 'Refined', 'General_PL']
 # splits = ['random', 'fingerprint', 'sequence']
 # split_names = ['random splitting', 'fingerprint splitting', 'sequence splitting']
 
 splits = ['random', 'scaffold', 'sequence']
-split_names = ['random splitting', 'scaffold splitting', 'sequence splitting']
+split_names = ['Random', 'Scaffold-based', 'Sequence-based']
 # metrics = ['pearson_r2_score', 'mean_absolute_error']
 # metric_names = ['pearson $R^2$', 'MAE']
 
 # MAE no meaning in here.
 metrics = ['pearson_r2_score']
-metric_names = ['pearson $R^2$']
-# version = 2015
-version = 2018
+metric_names = ['$R^2$']
+version = 2015
+# version = 2018
 sns.palplot(sns.color_palette('Set2'))
 sns.palplot(sns.color_palette('Paired', 9))
 
@@ -105,10 +106,10 @@ for metric, metric_name in zip(metrics, metric_names):
             loc = 'lower right'
         l = ax.legend(handles[0:3], cpn_names, frameon=False, loc=loc)
         ax.set_xlabel('')
+        ax.set_xticklabels(subset_names)
         ax.set_ylabel(metric_name)
-        ax.set_title(
-            f'ACNN performance on test sets of PDBbind {version} subsets\nwith {split_name}'
-        )
+        ax.set_title(f'Performance on Test Subsets of PDBbind Sets\n'
+                     f'Splitting Method: {split_name}')
         ax.set_ylim([-0.05, 1.05])
         fig.savefig(root / f"{version}.{split}.{metric}.png", dpi=300)
 
@@ -162,10 +163,10 @@ for metric, metric_name in zip(metrics, metric_names):
             loc = 'lower right'
         l = ax.legend(handles[0:3], split_names, frameon=False, loc=loc)
         ax.set_xlabel('')
+        ax.set_xticklabels(subset_names)
         ax.set_ylabel(metric_name)
-        ax.set_title(
-            f'ACNN performance on test sets of PDBbind {version} subsets\ncontaining {component_name} '
-        )
+        ax.set_title(f'Performance on Test Subsets of PDBbind Sets\n'
+                     f'Dataset: PDBbind ({component_name})')
         ax.set_ylim([-0.05, 1.05])
         fig.savefig(root / f"{version}.{component}.{metric}.png", dpi=300)
 

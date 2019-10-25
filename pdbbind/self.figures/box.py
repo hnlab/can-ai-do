@@ -21,7 +21,7 @@ df.tail()
 
 #%%
 components = ['binding', 'ligand', 'protein']
-cpn_names = ['Binding Complexes', 'Ligands Alone', 'Proteins Alone']
+cpn_names = ['Binding Complex', 'Ligand Alone', 'Protein Alone']
 subsets = ['core', 'refined', 'general_PL']
 subset_names = ['Core', 'Refined', 'General_PL']
 # splits = ['random', 'fingerprint', 'sequence']

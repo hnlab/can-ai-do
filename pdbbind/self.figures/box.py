@@ -23,7 +23,7 @@ df.tail()
 components = ['binding', 'ligand', 'protein']
 cpn_names = ['Binding Complex', 'Ligand Alone', 'Protein Alone']
 subsets = ['core', 'refined', 'general_PL']
-subset_names = ['Core', 'Refined', 'General_PL']
+subset_names = ['Core', 'Refined', 'General']
 # splits = ['random', 'fingerprint', 'sequence']
 # split_names = ['random splitting', 'fingerprint splitting', 'sequence splitting']
 

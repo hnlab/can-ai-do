@@ -22,7 +22,7 @@ df.tail()
 components = ['binding', 'ligand', 'protein']
 cpn_names = ['Binding Complex', 'Ligand Alone', 'Protein Alone']
 subsets = ['refined', 'general_PL']
-subset_names = ['Refined', 'General_PL']
+subset_names = ['Refined', 'General']
 
 # splits = ['random', 'fingerprint', 'sequence']
 # split_names = ['random splitting', 'fingerprint splitting', 'sequence splitting']
@@ -95,7 +95,7 @@ for metric, metric_name in zip(metrics, metric_names):
         ax.set_title(
             # f'ACNN performance on PDBbind {version} core subset\nwith {split_name}'
             f'Performance on PDBbind Core Set\n'
-            f'Training Set: Refined Set or General_PL Set')
+            f'Training Set: Refined Set or General Set')
         ax.set_yticks(np.linspace(0, 1, 11))
         ax.set_ylim([0.5, 0.9])
         fig.savefig(root / f"{version}.{split}.{metric}.png", dpi=300)

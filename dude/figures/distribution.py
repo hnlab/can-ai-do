@@ -99,8 +99,11 @@ def ForwardMol2MolSupplier(file_obj, sanitize=True):
     file_obj.close()
 
 
-def load_smiles(names, MolWt=None, MW500=False, fpAsArray=False, bits=None):
+def load_dude(names, MolWt=None, MW500=False, fpAsArray=False, bits=None):
+    if bits is not None:
+        fpAsArray = True
     datadir = Path(args.datadir)
+    all_ids = []
     all_fps = []
     all_props = []
     all_labels = []
@@ -143,27 +146,28 @@ def load_smiles(names, MolWt=None, MW500=False, fpAsArray=False, bits=None):
                 decoyFile = tdir / 'decoys_final.mol2.gz'
                 decoy_supp = ForwardMol2MolSupplier(gzip.open(decoyFile))
 
+        idf = activeFile.with_name(activeFile.name + '.id.pkl')
         fpf = activeFile.with_name(activeFile.name + '.fp.pkl')
         propf = activeFile.with_name(activeFile.name + '.prop.pkl')
         labelf = activeFile.with_name(activeFile.name + '.label.pkl')
+        idf_mw500 = idf.with_suffix('.MW500.pkl')
         fpf_mw500 = fpf.with_suffix('.MW500.pkl')
         propf_mw500 = propf.with_suffix('.MW500.pkl')
         labelf_mw500 = labelf.with_suffix('.MW500.pkl')
-        if not all([f.exists() for f in (fpf, propf, labelf)]):
+
+        if not all([f.exists() for f in (idf, fpf, propf, labelf)]):
+            ids = []
             fps = []
             props = []
             labels = []
+            ids_mw500 = []
             fps_mw500 = []
             props_mw500 = []
             labels_mw500 = []
-            canonical_smiles_set = set()
             for m in active_supp:
                 if m is None: continue
-                smiles = Chem.MolToSmiles(m)
-                if smiles in canonical_smiles_set:
-                    continue
-                else:
-                    canonical_smiles_set.add(smiles)
+                mol_id = f'{name}_{m.GetProp("_Name")}'
+                ids.append(mol_id)
                 fp = mfp2(m)
                 fps.append(fp)
                 p = getProp(m)
@@ -172,6 +176,7 @@ def load_smiles(names, MolWt=None, MW500=False, fpAsArray=False, bits=None):
                 # p:[mwha, mw, logp, rotb, hbd, hba, q]
                 if p[0] > 500:
                     continue
+                ids_mw500.append(mol_id)
                 fps_mw500.append(fp)
                 props_mw500.append(p)
                 labels_mw500.append(1)
@@ -181,16 +186,21 @@ def load_smiles(names, MolWt=None, MW500=False, fpAsArray=False, bits=None):
             np.random.seed(123)
             inds = np.random.choice(len(decoy_mols), select_num, replace=False)
             for i, m in enumerate(decoy_mols):
+                mol_id = f'{name}_{m.GetProp("_Name")}'
+                ids.append(mol_id)
                 fp = mfp2(m)
                 fps.append(fp)
                 p = getProp(m)
                 props.append(p)
                 labels.append(0)
                 if i in inds:
+                    ids_mw500.append(mol_id)
                     fps_mw500.append(fp)
                     props_mw500.append(p)
                     labels_mw500.append(0)
 
+            with open(idf, 'wb') as f:
+                pickle.dump(ids, f)
             with open(fpf, 'wb') as f:
                 pickle.dump(fps, f)
             with open(propf, 'wb') as f:
@@ -198,6 +208,8 @@ def load_smiles(names, MolWt=None, MW500=False, fpAsArray=False, bits=None):
             with open(labelf, 'wb') as f:
                 pickle.dump(labels, f)
 
+            with open(idf_mw500, 'wb') as f:
+                pickle.dump(ids_mw500, f)
             with open(fpf_mw500, 'wb') as f:
                 pickle.dump(fps_mw500, f)
             with open(propf_mw500, 'wb') as f:
@@ -218,12 +230,10 @@ def load_smiles(names, MolWt=None, MW500=False, fpAsArray=False, bits=None):
                     pickle.dump(fps_np, f)
 
         if MW500:
+            idf = idf_mw500
             fpf = fpf_mw500
             propf = propf_mw500
             labelf = labelf_mw500
-
-        if bits is not None:
-            fpAsArrays = True
 
         if fpAsArray:
             fpf_np = fpf.with_suffix('.np.pkl')
@@ -236,13 +246,23 @@ def load_smiles(names, MolWt=None, MW500=False, fpAsArray=False, bits=None):
         if bits is not None:
             fps = fps[:, bits]
 
+        with open(idf, 'rb') as f:
+            ids = pickle.load(f)
         with open(propf, 'rb') as f:
             props = pickle.load(f)
         with open(labelf, 'rb') as f:
             labels = pickle.load(f)
-        all_fps.extend(fps)
+
+        all_ids.extend(ids)
         all_props.extend(props)
         all_labels.extend(labels)
+
+        all_fps.append(fps)
+
+    if fpAsArray:
+        all_fps = np.vstack(all_fps)
+    else:
+        all_fps = sum(all_fps, [])  # flatten list of list
 
     # prop: [mwha, mw, logp, rotb, hbd, hba, q]
     all_props = np.array(all_props)
@@ -250,7 +270,7 @@ def load_smiles(names, MolWt=None, MW500=False, fpAsArray=False, bits=None):
         all_props = all_props[:, (0, 2, 3, 4, 5, 6)]
     if MolWt == 'MolWt':
         all_props = all_props[:, (1, 2, 3, 4, 5, 6)]
-    return all_fps, all_props, all_labels
+    return all_ids, all_fps, all_props, all_labels
 
 
 with open(args.fold_list) as f:
@@ -261,7 +281,7 @@ with open(args.fold_list) as f:
 
 iter_targets = [[i] for i in targets]
 p = mp.Pool()
-for _ in tqdm(p.imap_unordered(load_smiles, iter_targets),
+for _ in tqdm(p.imap_unordered(load_dude, iter_targets),
               desc='Converting smiles into fingerprints and properties',
               total=len(targets)):
     pass
@@ -270,11 +290,22 @@ p.close()
 output = Path(args.output)
 output.parent.mkdir(parents=True, exist_ok=True)
 print(f"loading fps and properties with MW500={args.MW500}")
-fps, props, labels = load_smiles(targets, MW500=args.MW500)
+ids, fps, props, labels = load_dude(targets, MW500=args.MW500)
 props = np.array(props)
 labels = np.array(labels)
+
 active_mask = labels == 1
 decoy_mask = labels == 0
+
+ids = np.array(ids)
+unique_ids, indices = np.unique(ids, return_index=True)
+unique_mask = np.zeros_like(active_mask)
+unique_mask[indices] = True
+
+unique_active_mask = unique_mask & active_mask
+unique_decoy_mask = unique_mask & decoy_mask
+print(f"#active:{sum(unique_active_mask)}, #decoy:{sum(unique_decoy_mask)}")
+
 # mw, logp, rotb, hbd, hba, q
 prop_keys = ['mwha', 'mw', 'logp', 'rotb', 'hbd', 'hba', 'q']
 prop_names = {
@@ -311,7 +342,7 @@ for p_key, ps, ax in zip(prop_keys, props.T, axes):
     # ax.set_title(targets)
     ax.set_xlabel(prop_names[p_key])
     print(f"{p_key}: min {min(ps)} max {max(ps)}")
-    decoy = ps[decoy_mask]
+    decoy = ps[unique_decoy_mask]
     sns.distplot(decoy,
                  label='Decoys',
                  bins=bins,
@@ -320,7 +351,7 @@ for p_key, ps, ax in zip(prop_keys, props.T, axes):
                  color='blue',
                  hist_kws=hist_kws,
                  ax=ax)
-    active = ps[active_mask]
+    active = ps[unique_active_mask]
     sns.distplot(active,
                  label='Actives',
                  bins=bins,
@@ -336,7 +367,7 @@ print(f"result figure saved at {args.output}")
 
 if args.single:
     for target in targets:
-        fps, props, labels = load_smiles([target], MW500=args.MW500)
+        ids, fps, props, labels = load_dude([target], MW500=args.MW500)
         props = np.array(props)
         labels = np.array(labels)
         active_mask = labels == 1
@@ -447,11 +478,9 @@ else:
     print(f'zinc freq saved to {zinc_freq_file}')
 
 print('counting DUD-E fingerprint bits ...')
-fps, probe, labels = load_smiles(targets, MW500=args.MW500, fpAsArray=True)
-fps = np.asarray(fps)
-labels = np.asarray(labels)
-active_fps = fps[labels == 1]
-decoy_fps = fps[labels == 0]
+ids, fps, probe, labels = load_dude(targets, MW500=args.MW500, fpAsArray=True)
+active_fps = fps[unique_active_mask]
+decoy_fps = fps[unique_decoy_mask]
 active_bits_freq = active_fps.sum(axis=0) / len(active_fps)
 decoy_bits_freq = decoy_fps.sum(axis=0) / len(decoy_fps)
 bits_factor = np.divide(active_bits_freq,
@@ -504,6 +533,7 @@ cols = [
 df = pd.DataFrame(data, columns=cols)
 df = df.sort_values(by='zinc_freq', ascending=False)
 df = df.reset_index(drop=True)
+df.index += 1
 csv = output.with_suffix(f'.bits_freq.csv')
 with open(csv, 'w') as f:
     df.to_csv(f, index=False)
@@ -530,11 +560,13 @@ print(f'all bits saved to {jpg}')
 
 df = df.loc[(df.mean_freq >= 0.03) & (np.abs(df.log2_FC) >= 1)]
 df = df.reset_index(drop=True)
+df.index += 1
+
 fig, ax = plt.subplots(figsize=(8, 6))
 for i, (lower, upper) in enumerate(zip(df.active_freq, df.decoy_freq)):
     if lower > upper:
         lower, upper = upper, lower
-    ax.vlines(i, lower, upper, colors='silver', zorder=0)
+    ax.vlines(i + 1, lower, upper, colors='silver', zorder=0)
 ax.scatter(df.index, df.active_freq, color='red', label='Actives', marker='+')
 ax.scatter(df.index, df.decoy_freq, color='blue', label='Decoys', marker='+')
 ax.scatter(df.index, df.zinc_freq, color='black', label='ZINC', marker='+')
@@ -594,6 +626,7 @@ for col, list_ in zip(svg_cols, bits_examples):
     df[col] = list_
 df = df.sort_values(by='zinc_freq', ascending=False)
 df = df.reset_index(drop=True)
+df.index += 1
 df['bit'] = [f'bit:<br>{i}' for i in df['bit']]
 df['log2_FC'] = [f'log2(FC):<br>{i:.2f}' for i in df['log2_FC']]
 for col in ['active_freq', 'decoy_freq', 'mean_freq', 'zinc_freq']:

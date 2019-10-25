@@ -5,9 +5,15 @@ import pandas as pd
 from pathlib import Path
 
 # need seaborn support `positions` https://github.com/0ut0fcontrol/seaborn/commit/f1d6a3ead56e2e6398484a4ed159fc0efce1230b
-import seaborn as sns
+import matplotlib
+# matplotlib.use("nbAgg")
 from matplotlib import pyplot as plt
+print(plt.get_backend())
+import seaborn as sns
 
+# https://ipython-books.github.io/61-using-matplotlib-styles/
+# print(matplotlib.style.available)
+# matplotlib.style.use('seaborn-whitegrid')
 #%%
 print(Path.cwd())
 root = Path('dude/figures')
@@ -57,11 +63,15 @@ sns.boxplot(
 
 ax.set_xlabel('')
 ax.set_ylabel('$EF_1$')
-ax.set_ylim([-11, 52])
-ax.set_yticks(np.linspace(0, 50, 6))
+ef1_l, ef1_u = 0, 62
+ef1_diff = ef1_u - ef1_l
+ax.set_ylim([ef1_l - ef1_diff * 0.2, ef1_u + ef1_diff * 0.05])
+ax.set_yticks(np.linspace(0, 60, 7))
 ax2.set_ylabel('$AUC$')
-ax2.set_ylim([0.39, 1.02])
-ax2.set_yticks(np.linspace(0.5, 1, 6))
+auc_l, auc_u = 0.5, 1.0
+auc_diff = auc_u - auc_l
+ax2.set_ylim([auc_l - auc_diff * 0.2, auc_u + auc_diff * 0.05])
+ax2.set_yticks(np.linspace(0.4, 1, 7))
 
 ax.set_title("PROP+RF Performance on DUD-E (102 Targets)")
 
@@ -117,11 +127,15 @@ sns.boxplot(
 
 ax.set_xlabel('')
 ax.set_ylabel('$EF_1$')
-ax.set_ylim([-11, 52])
-ax.set_yticks(np.linspace(0, 50, 6))
+ef1_l, ef1_u = 0, 62
+ef1_diff = ef1_u - ef1_l
+ax.set_ylim([ef1_l - ef1_diff * 0.2, ef1_u + ef1_diff * 0.05])
+ax.set_yticks(np.linspace(0, 60, 7))
 ax2.set_ylabel('$AUC$')
-ax2.set_ylim([0.39, 1.02])
-ax2.set_yticks(np.linspace(0.5, 1, 6))
+auc_l, auc_u = 0.5, 1.0
+auc_diff = auc_u - auc_l
+ax2.set_ylim([auc_l - auc_diff * 0.2, auc_u + auc_diff * 0.05])
+ax2.set_yticks(np.linspace(0.4, 1, 7))
 
 ax.set_title("FP+RF Performance on DUD-E (102 Targets)")
 

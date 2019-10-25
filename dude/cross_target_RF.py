@@ -106,8 +106,11 @@ def ForwardMol2MolSupplier(file_obj, sanitize=True):
     file_obj.close()
 
 
-def load_smiles(names, MolWt=None, MW500=False, fpAsArray=False, bits=None):
+def load_dude(names, MolWt=None, MW500=False, fpAsArray=False, bits=None):
+    if bits is not None:
+        fpAsArray = True
     datadir = Path(args.datadir)
+    all_ids = []
     all_fps = []
     all_props = []
     all_labels = []
@@ -150,27 +153,28 @@ def load_smiles(names, MolWt=None, MW500=False, fpAsArray=False, bits=None):
                 decoyFile = tdir / 'decoys_final.mol2.gz'
                 decoy_supp = ForwardMol2MolSupplier(gzip.open(decoyFile))
 
+        idf = activeFile.with_name(activeFile.name + '.id.pkl')
         fpf = activeFile.with_name(activeFile.name + '.fp.pkl')
         propf = activeFile.with_name(activeFile.name + '.prop.pkl')
         labelf = activeFile.with_name(activeFile.name + '.label.pkl')
+        idf_mw500 = idf.with_suffix('.MW500.pkl')
         fpf_mw500 = fpf.with_suffix('.MW500.pkl')
         propf_mw500 = propf.with_suffix('.MW500.pkl')
         labelf_mw500 = labelf.with_suffix('.MW500.pkl')
-        if not all([f.exists() for f in (fpf, propf, labelf)]):
+
+        if not all([f.exists() for f in (idf, fpf, propf, labelf)]):
+            ids = []
             fps = []
             props = []
             labels = []
+            ids_mw500 = []
             fps_mw500 = []
             props_mw500 = []
             labels_mw500 = []
-            canonical_smiles_set = set()
             for m in active_supp:
                 if m is None: continue
-                smiles = Chem.MolToSmiles(m)
-                if smiles in canonical_smiles_set:
-                    continue
-                else:
-                    canonical_smiles_set.add(smiles)
+                mol_id = f'{name}_{m.GetProp("_Name")}'
+                ids.append(mol_id)
                 fp = mfp2(m)
                 fps.append(fp)
                 p = getProp(m)
@@ -179,6 +183,7 @@ def load_smiles(names, MolWt=None, MW500=False, fpAsArray=False, bits=None):
                 # p:[mwha, mw, logp, rotb, hbd, hba, q]
                 if p[0] > 500:
                     continue
+                ids_mw500.append(mol_id)
                 fps_mw500.append(fp)
                 props_mw500.append(p)
                 labels_mw500.append(1)
@@ -188,16 +193,21 @@ def load_smiles(names, MolWt=None, MW500=False, fpAsArray=False, bits=None):
             np.random.seed(123)
             inds = np.random.choice(len(decoy_mols), select_num, replace=False)
             for i, m in enumerate(decoy_mols):
+                mol_id = f'{name}_{m.GetProp("_Name")}'
+                ids.append(mol_id)
                 fp = mfp2(m)
                 fps.append(fp)
                 p = getProp(m)
                 props.append(p)
                 labels.append(0)
                 if i in inds:
+                    ids_mw500.append(mol_id)
                     fps_mw500.append(fp)
                     props_mw500.append(p)
                     labels_mw500.append(0)
 
+            with open(idf, 'wb') as f:
+                pickle.dump(ids, f)
             with open(fpf, 'wb') as f:
                 pickle.dump(fps, f)
             with open(propf, 'wb') as f:
@@ -205,6 +215,8 @@ def load_smiles(names, MolWt=None, MW500=False, fpAsArray=False, bits=None):
             with open(labelf, 'wb') as f:
                 pickle.dump(labels, f)
 
+            with open(idf_mw500, 'wb') as f:
+                pickle.dump(ids_mw500, f)
             with open(fpf_mw500, 'wb') as f:
                 pickle.dump(fps_mw500, f)
             with open(propf_mw500, 'wb') as f:
@@ -225,12 +237,10 @@ def load_smiles(names, MolWt=None, MW500=False, fpAsArray=False, bits=None):
                     pickle.dump(fps_np, f)
 
         if MW500:
+            idf = idf_mw500
             fpf = fpf_mw500
             propf = propf_mw500
             labelf = labelf_mw500
-
-        if bits is not None:
-            fpAsArrays = True
 
         if fpAsArray:
             fpf_np = fpf.with_suffix('.np.pkl')
@@ -243,13 +253,23 @@ def load_smiles(names, MolWt=None, MW500=False, fpAsArray=False, bits=None):
         if bits is not None:
             fps = fps[:, bits]
 
+        with open(idf, 'rb') as f:
+            ids = pickle.load(f)
         with open(propf, 'rb') as f:
             props = pickle.load(f)
         with open(labelf, 'rb') as f:
             labels = pickle.load(f)
-        all_fps.extend(fps)
+
+        all_ids.extend(ids)
         all_props.extend(props)
         all_labels.extend(labels)
+
+        all_fps.append(fps)
+
+    if fpAsArray:
+        all_fps = np.vstack(all_fps)
+    else:
+        all_fps = sum(all_fps, [])  # flatten list of list
 
     # prop: [mwha, mw, logp, rotb, hbd, hba, q]
     all_props = np.array(all_props)
@@ -257,7 +277,7 @@ def load_smiles(names, MolWt=None, MW500=False, fpAsArray=False, bits=None):
         all_props = all_props[:, (0, 2, 3, 4, 5, 6)]
     if MolWt == 'MolWt':
         all_props = all_props[:, (1, 2, 3, 4, 5, 6)]
-    return all_fps, all_props, all_labels
+    return all_ids, all_fps, all_props, all_labels
 
 
 def enrichment_factor(y_true, y_pred, first=0.01):
@@ -274,45 +294,45 @@ def enrichment_factor(y_true, y_pred, first=0.01):
 
 def random_forest(train_test):
     train_names, test_names = train_test
-    train_fps, train_props, train_labels = load_smiles(train_names,
-                                                       MolWt=args.MolWt,
-                                                       fpAsArray=True,
-                                                       bits=args.bits,
-                                                       MW500=args.MW500)
+    train_ids, train_fps, train_props, train_labels = load_dude(
+        train_names,
+        MolWt=args.MolWt,
+        fpAsArray=True,
+        bits=args.bits,
+        MW500=args.MW500)
     XY = {'fp': (train_fps, train_labels), 'prop': (train_props, train_labels)}
     # XY = {'prop': (train_props, train_labels)}
     results = {}
     for key, (X, Y) in XY.items():
         result = {'ROC': {}, 'EF1': {}}
-        clf = RandomForestClassifier(
-            n_estimators=100,
-            # max_depth=10,
-            # min_samples_split=10,
-            # min_samples_split=5,
-            # min_samples_leaf=2,
-            # class_weight='balanced',
-            # class_weight={
-            #     0: 1,
-            #     1: 50
-            # },
-            random_state=0,
-            # n_jobs=8,
-        )
+        clf = RandomForestClassifier(n_estimators=100, random_state=0)
         clf.fit(X, Y)
         for test_name in test_names:
-            test_fps, test_props, test_labels = load_smiles([test_name],
-                                                            MolWt=args.MolWt,
-                                                            fpAsArray=True,
-                                                            bits=args.bits,
-                                                            MW500=args.MW500)
+            test_ids, test_fps, test_props, test_labels = load_dude(
+                [test_name],
+                MolWt=args.MolWt,
+                fpAsArray=True,
+                bits=args.bits,
+                MW500=args.MW500)
+            test_ids = np.asarray(test_ids)
+            test_labels = np.asarray(test_labels)
+
             if key == 'fp':
                 test_X = test_fps
             if key == 'prop':
                 test_X = test_props
+
             pred = clf.predict_proba(test_X)
-            ROC = metrics.roc_auc_score(test_labels, pred[:, 1])
-            # auc_prc = metrics.average_precision_score(test_labels, pred[:, 1])
-            EF1 = enrichment_factor(test_labels, pred[:, 1], first=0.01)
+            y_pred = pred[:, 1]
+
+            sort_indices = np.argsort(-y_pred)
+            test_ids = test_ids[sort_indices]
+            uniq_ids, uniq_indices = np.unique(test_ids, return_index=True)
+            y_pred = y_pred[sort_indices][uniq_indices]
+            test_labels = test_labels[sort_indices][uniq_indices]
+
+            ROC = metrics.roc_auc_score(test_labels, y_pred)
+            EF1 = enrichment_factor(test_labels, y_pred, first=0.01)
             result['ROC'][test_name] = ROC
             result['EF1'][test_name] = EF1
         result['feature_importances'] = list(clf.feature_importances_)
@@ -328,24 +348,11 @@ with open(args.fold_list) as f:
 
 iter_targets = [[i] for i in targets]
 p = mp.Pool()
-for _ in tqdm(p.imap_unordered(load_smiles, iter_targets),
+for _ in tqdm(p.imap_unordered(load_dude, iter_targets),
               desc='Converting smiles into fingerprints and properties',
               total=len(targets)):
     pass
 p.close()
-
-active_num = 0
-decoy_num = 0
-if args.MW500:
-    description = 'count compounds with MW <= 500'
-else:
-    description = 'Total compounds'
-for t in tqdm(targets, desc=description):
-    _, _, labels = load_smiles([t], MW500=args.MW500)
-    labels = np.asarray(labels)
-    active_num += sum(labels == 1)
-    decoy_num += sum(labels == 0)
-print(f"\ntotal actives:{active_num}, total decoy:{decoy_num}")
 
 feature_sets = ('prop', 'fp')
 metric_names = ('ROC', 'EF1')

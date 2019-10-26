@@ -562,7 +562,7 @@ df = df.loc[(df.mean_freq >= 0.03) & (np.abs(df.log2_FC) >= 1)]
 df = df.reset_index(drop=True)
 df.index += 1
 
-fig, ax = plt.subplots(figsize=(8, 6))
+fig, ax = plt.subplots(figsize=(6, 4.5))
 for i, (lower, upper) in enumerate(zip(df.active_freq, df.decoy_freq)):
     if lower > upper:
         lower, upper = upper, lower
@@ -571,11 +571,13 @@ ax.scatter(df.index, df.active_freq, color='red', label='Actives', marker='+')
 ax.scatter(df.index, df.decoy_freq, color='blue', label='Decoys', marker='+')
 ax.scatter(df.index, df.zinc_freq, color='black', label='ZINC', marker='+')
 ax.set_xlabel(
-    f'{len(df)} Bits Significantly Changed Between Actives and Decoys in DUD-E'
-)
-ax.set_ylabel('Relative Frequency of Bit Set on Each Bit')
-ax.set_xticks([i * 5 for i in range(int(len(df) / 5) + 1)])
-ax.legend()
+    f'{len(df)} Bits Significantly Changed Between Actives and Decoys',
+    fontsize=12)
+ax.set_ylabel('Relative Frequency on Each Bit', fontsize=12)
+# ax.set_xticks([i * 5 for i in range(int(len(df) / 10) + 1)])
+ax.legend(fontsize=12)
+# [left, bottom, width, height]
+ax.set_position([0.15, 0.15, 0.8, 0.8])
 jpg = output.with_suffix('.significant_bits_vs_zinc.jpg')
 fig.savefig(jpg, dpi=300)
 print(f'significant bits plot saved to {jpg}')

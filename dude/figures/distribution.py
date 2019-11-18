@@ -7,8 +7,7 @@ import argparse
 import numpy as np
 import pandas as pd
 from pathlib import Path
-import scipy.sparse as sp
-from scipy.spatial import distance
+from collections import Counter
 
 from tqdm import tqdm
 # from multiprocessing.dummy import Pool
@@ -446,12 +445,15 @@ zinc = Path(args.zinc)
 zinc_freq_file = zinc.with_suffix('.bits_freq.json')
 if zinc_freq_file.exists():
     with open(zinc_freq_file) as f:
-        zinc_freq = json.load(f)
+        zinc_data = json.load(f)
+        zinc_freq = zinc_data['bit_freq']
+        zinc_bitset = Counter(zinc_data['bit_set'])
     print(f'load zinc frequency from {zinc_freq_file}')
 else:
     # http://rdkit.blogspot.com/2016/02/morgan-fingerprint-bit-statistics.html
     freq = [0 for i in range(nBits)]
-    vaild_count = 0
+    zinc_bitset = Counter()
+    valid_count = 0
     with open(args.zinc) as f:
         total = sum(1 for line in f)
     pbar = tqdm(desc='count ZINC bits freq', total=total, unit=' mol')
@@ -465,17 +467,37 @@ else:
             for fp in fps:
                 if fp is None:
                     continue
-                vaild_count += 1
+                valid_count += 1
+                zinc_bitset[fp.GetNumOnBits()] += 1
                 for i in fp.GetOnBits():
                     freq[i] += 1
             pbar.update(len(lines))
             lines = f.readlines(nchar)
     pbar.close()
 
-    zinc_freq = np.array(freq) / vaild_count
+    zinc_freq = np.array(freq) / valid_count
+    sum_bitset = sum(number * count for number, count in zinc_bitset.items())
+    mean_bitset = sum_bitset / valid_count
     with open(zinc_freq_file, 'w') as f:
-        json.dump(zinc_freq.tolist(), f)
+        zinc_data = {
+            'bit_freq': zinc_freq.tolist(),
+            'num_valid_mols': valid_count,
+            'bit_set': zinc_bitset,
+            'mean_bit_set': mean_bitset
+        }
+        json.dump(zinc_data, f)
     print(f'zinc freq saved to {zinc_freq_file}')
+
+print(f"mean of bit set {zinc_data['mean_bit_set']}")
+print(f"most common number of bit set: {zinc_bitset.most_common(10)}")
+fig, ax = plt.subplots()
+nums, counts = zip(*[(k, zinc_bitset[k]) for k in sorted(zinc_bitset.keys())])
+ax.plot(nums, counts, '.b-')
+ax.set_xlabel('Number of Bits Set')
+ax.set_ylabel('Count')
+jpg = output.with_suffix('.zinc_bitset.jpg')
+fig.savefig(jpg, dpi=300)
+print(f'number of bits set in ZINC saved to {jpg}')
 
 print('counting DUD-E fingerprint bits ...')
 ids, fps, probe, labels = load_dude(targets, MW500=args.MW500, fpAsArray=True)
@@ -523,6 +545,33 @@ jpg = output.with_suffix(f'.bits_freq0.4_vs_factor.jpg')
 fig.savefig(jpg, dpi=300)
 print(f"bits freq vs factor saved at {jpg}")
 plt.close(fig)
+
+print('number of bits have relative frequency greater than freq:\n')
+for i in np.linspace(0.1, 1, 10):
+    print(f'freq: {i:.1f} '
+          f'ZINC:{sum(zinc_freq>i):4d} '
+          f'mean:{sum(mean_freq>i):4d} '
+          f'active: {sum(active_bits_freq>i):4d} '
+          f'decoy: {sum(decoy_bits_freq>i):4d}')
+
+
+def sum_bits_freq_to(freq, percent):
+    sum_freq = sum(freq)
+    acc_freq = 0
+    for i, f in enumerate(sorted(freq, reverse=True)):
+        acc_freq += f
+        if acc_freq / sum_freq >= percent:
+            break
+    return i + 1
+
+
+print('m percent of bit set located in n bits')
+for i in np.linspace(0.1, 1.0, 10):
+    print(f'percent: {i:.1f} '
+          f'ZINC:{sum_bits_freq_to(zinc_freq, i):4d} '
+          f'mean:{sum_bits_freq_to(mean_freq, i):4d} '
+          f'active: {sum_bits_freq_to(active_bits_freq, i):4d} '
+          f'decoy: {sum_bits_freq_to(decoy_bits_freq, i):4d}')
 
 data = list(
     zip(range(nBits), zinc_freq, bits_factor, mean_freq, active_bits_freq,

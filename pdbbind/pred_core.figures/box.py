@@ -36,8 +36,8 @@ split_names = ['Random', 'Scaffold-based', 'Sequence-based']
 # MAE no meaning in here.
 metrics = ['pearson_r2_score']
 metric_names = ['$R^2$']
-version = 2015
-# version = 2018
+# version = 2015
+version = 2018
 #%%
 colors_2d = sns.color_palette()[:9]
 colors_2d = np.reshape(colors_2d, (3, 3, 3))
@@ -94,7 +94,7 @@ for metric, metric_name in zip(metrics, metric_names):
         ax.set_ylabel(metric_name)
         ax.set_title(
             # f'ACNN performance on PDBbind {version} core subset\nwith {split_name}'
-            f'Performance on PDBbind Core Set\n'
+            f'Performance on PDBbind {version} Core Set\n'
             f'Training Set: Refined Set or General Set')
         ax.set_yticks(np.linspace(0, 1, 11))
         ax.set_ylim([0.5, 0.9])
@@ -154,7 +154,9 @@ for metric, metric_name in zip(metrics, metric_names):
         ax.set_xlabel('')
         ax.set_ylabel(metric_name)
         ax.set_title(
-            f'ACNN performance on PDBbind {version} core subset\ncontaining {component_name} '
+            # f'ACNN performance on PDBbind {version} core subset\ncontaining {component_name} '
+            f'Performance on PDBbind {version} Core Set\n'
+            f'Dataset: PDBbind ({component_name})'
         )
         ax.set_yticks(np.linspace(0, 1, 11))
         ax.set_ylim([0.5, 0.9])

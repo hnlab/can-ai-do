@@ -49,7 +49,7 @@ for c in colors[:3]:
     colors_2d.extend(sns.light_palette(c, 5)[-3:])
 
 sns.palplot(colors_2d)
-colors_2d = np.reshape(colors_2d, (3, 3, 4))
+colors_2d = np.reshape(colors_2d, (3, 3, 3))
 
 colors_2d = sns.color_palette('Paired', 9)
 colors_2d = sns.color_palette()[:9]
@@ -108,7 +108,7 @@ for metric, metric_name in zip(metrics, metric_names):
         ax.set_xlabel('')
         ax.set_xticklabels(subset_names)
         ax.set_ylabel(metric_name)
-        ax.set_title(f'Performance on Test Subsets of PDBbind Sets\n'
+        ax.set_title(f'Performance on Test Subsets of PDBbind {version} Sets\n'
                      f'Splitting Method: {split_name}')
         ax.set_ylim([-0.05, 1.05])
         fig.savefig(root / f"{version}.{split}.{metric}.png", dpi=300)
@@ -165,7 +165,7 @@ for metric, metric_name in zip(metrics, metric_names):
         ax.set_xlabel('')
         ax.set_xticklabels(subset_names)
         ax.set_ylabel(metric_name)
-        ax.set_title(f'Performance on Test Subsets of PDBbind Sets\n'
+        ax.set_title(f'Performance on Test Subsets of PDBbind {version} Sets\n'
                      f'Dataset: PDBbind ({component_name})')
         ax.set_ylim([-0.05, 1.05])
         fig.savefig(root / f"{version}.{component}.{metric}.png", dpi=300)

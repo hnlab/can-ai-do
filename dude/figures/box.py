@@ -16,18 +16,43 @@ import seaborn as sns
 # matplotlib.style.use('seaborn-whitegrid')
 #%%
 print(Path.cwd())
-root = Path('dude/figures')
+root = Path('/home/jcyang/git/can-ai-do/dude/figures')
 files = {
-    'DUD-E\nRandom CV': 'full.random3fold.None.csv',
-    'DUD-E (rmMW>500)\nRandom CV': 'full.random3fold.rmMW500.csv',
-    'DUD-E\nCross-Class CV': 'full.family3fold.None.csv',
-    'DUD-E (rmMW>500)\nCross-Class CV': 'full.family3fold.rmMW500.csv',
+    'DUD-E\nRandom': 'full.random3fold.None.csv',
+    'DUD-E(MW≤500)\nRandom': 'full.random3fold.rmMW500.csv',
+    'DUD-E\nCross-Class': 'full.family3fold.None.csv',
+    'DUD-E(MW≤500)\nCross-Class': 'full.family3fold.rmMW500.csv',
 }
 dfs = {}
 for k, v in files.items():
     dfs[k] = pd.read_csv(root / 'result' / v)
 df = pd.concat(dfs, names=['dataset']).reset_index()
 N = len(dfs)
+# %%
+dfs = []
+for k, v in files.items():
+    # target feat	metric	value	dataset	CV
+    tmp_df = pd.read_csv(root / 'result' / v, index_col=[0])
+    tmp_df['dataset'], tmp_df['CV'] = k.split('\n')
+    tmp_df['feature'] = tmp_df['feat']
+    EF1 = tmp_df[tmp_df['metric']=='EF1']
+    EF1['EF1'] = EF1['value']
+    ROC = tmp_df[tmp_df['metric']=='ROC']
+    ROC['ROC_AUC'] = ROC['value']
+    tmp_df = EF1.merge(ROC, on=['target', 'feature','CV', 'dataset'])
+    tmp_df = tmp_df[['feature', 'CV', 'dataset', 'EF1', 'ROC_AUC']]
+    dfs.append(tmp_df)
+df = pd.concat(dfs)
+df
+# %%
+summary_df = df.groupby(['feature','CV', 'dataset'], group_keys=['EF1', 'ROC_AUC']).agg(['mean','std']).reset_index()
+summary_df.to_csv('summary.csv', index=False)
+summary_df
+# %%
+summary_df['EF1_printable'] = [f'{mean:.2f} (±{std:.2f})' for index, mean, std in summary_df['EF1'].itertuples()]
+summary_df['ROC_printable'] = [f'{mean:.2f} (±{std:.2f})' for index, mean, std in summary_df['ROC_AUC'].itertuples()]
+summary_df.to_csv('summary_printable.csv', index=False)
+summary_df
 
 #%%
 offset = 0.2
